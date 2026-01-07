@@ -1,0 +1,67 @@
+<svg width="450" height="800" viewBox="0 0 450 800"
+    xmlns="http://www.w3.org/2000/svg">
+    <!-- Hintergrund Gradient -->
+    <defs>
+        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+        </linearGradient>
+        <linearGradient id="cardGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.15" />
+            <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.05" />
+        </linearGradient>
+    </defs>
+
+    <!-- Hintergrund -->
+    <rect width="450" height="800" fill="url(#bgGradient)"/>
+
+    <!-- Dekorative Kreise im Hintergrund -->
+    <circle cx="350" cy="100" r="80" fill="#ffffff" opacity="0.05"/>
+    <circle cx="80" cy="700" r="100" fill="#ffffff" opacity="0.05"/>
+
+    <!-- Haupticon Container -->
+    <rect x="125" y="250" width="200" height="200" rx="20" fill="url(#cardGradient)" stroke="#ffffff" stroke-width="2" opacity="0.8"/>
+
+    <!-- Vereinsmanagement Icon: Personen + Dokument -->
+    <g transform="translate(225, 320)">
+        <!-- Person 1 -->
+        <circle cx="-25" cy="0" r="15" fill="#ffffff" opacity="0.9"/>
+        <path d="M -40 35 Q -25 20 -10 35" fill="#ffffff" opacity="0.9" stroke="#ffffff" stroke-width="2"/>
+
+        <!-- Person 2 -->
+        <circle cx="25" cy="0" r="15" fill="#ffffff" opacity="0.9"/>
+        <path d="M 10 35 Q 25 20 40 35" fill="#ffffff" opacity="0.9" stroke="#ffffff" stroke-width="2"/>
+
+        <!-- Dokument/Liste Icon -->
+        <rect x="-30" y="60" width="60" height="50" rx="5" fill="#ffffff" opacity="0.9"/>
+        <line x1="-20" y1="72" x2="20" y2="72" stroke="#4F46E5" stroke-width="2"/>
+        <line x1="-20" y1="82" x2="20" y2="82" stroke="#4F46E5" stroke-width="2"/>
+        <line x1="-20" y1="92" x2="10" y2="92" stroke="#4F46E5" stroke-width="2"/>
+    </g>
+
+    <!-- Feature Icons -->
+    <g transform="translate(225, 600)">
+        <!-- Kalender -->
+        <g transform="translate(-80, 0)">
+            <rect x="-15" y="-15" width="30" height="30" rx="3" fill="#ffffff" opacity="0.2"/>
+            <rect x="-10" y="-8" width="20" height="15" rx="1" fill="#ffffff"/>
+            <line x1="-6" y1="-12" x2="-6" y2="-16" stroke="#ffffff" stroke-width="2"/>
+            <line x1="6" y1="-12" x2="6" y2="-16" stroke="#ffffff" stroke-width="2"/>
+        </g>
+
+        <!-- Statistik -->
+        <g transform="translate(0, 0)">
+            <rect x="-15" y="-15" width="30" height="30" rx="3" fill="#ffffff" opacity="0.2"/>
+            <rect x="-8" y="2" width="4" height="6" fill="#ffffff"/>
+            <rect x="-2" y="-2" width="4" height="10" fill="#ffffff"/>
+            <rect x="4" y="-6" width="4" height="14" fill="#ffffff"/>
+        </g>
+
+        <!-- Nachricht -->
+        <g transform="translate(80, 0)">
+            <rect x="-15" y="-15" width="30" height="30" rx="3" fill="#ffffff" opacity="0.2"/>
+            <rect x="-9" y="-6" width="18" height="12" rx="2" fill="none" stroke="#ffffff" stroke-width="2"/>
+            <path d="M -9 -6 L 0 2 L 9 -6" fill="none" stroke="#ffffff" stroke-width="2"/>
+        </g>
+    </g>
+</svg>

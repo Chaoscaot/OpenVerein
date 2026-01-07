@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+    <!-- Background -->
+    <rect width="200" height="200" fill="#2563eb" rx="20"/>
+
+    <!-- Main icon: stylized people in organization -->
+    <g transform="translate(100, 100)">
+        <!-- Center person (leader/main) -->
+        <circle cx="0" cy="-15" r="12" fill="#ffffff"/>
+        <path d="M -15,-2 Q -15,8 -10,12 L 10,12 Q 15,8 15,-2 Z" fill="#ffffff"/>
+
+        <!-- Left person -->
+        <circle cx="-35" cy="10" r="10" fill="#93c5fd"/>
+        <path d="M -47,21 Q -47,29 -43,32 L -27,32 Q -23,29 -23,21 Z" fill="#93c5fd"/>
+
+        <!-- Right person -->
+        <circle cx="35" cy="10" r="10" fill="#93c5fd"/>
+        <path d="M 23,21 Q 23,29 27,32 L 43,32 Q 47,29 47,21 Z" fill="#93c5fd"/>
+
+        <!-- Bottom left person -->
+        <circle cx="-35" cy="45" r="9" fill="#dbeafe"/>
+        <path d="M -45,53 Q -45,60 -42,62 L -28,62 Q -25,60 -25,53 Z" fill="#dbeafe"/>
+
+        <!-- Bottom right person -->
+        <circle cx="35" cy="45" r="9" fill="#dbeafe"/>
+        <path d="M 25,53 Q 25,60 28,62 L 42,62 Q 45,60 45,53 Z" fill="#dbeafe"/>
+
+        <!-- Connection lines -->
+        <line x1="0" y1="-3" x2="-25" y2="10" stroke="#ffffff" stroke-width="2.5" opacity="0.5"/>
+        <line x1="0" y1="-3" x2="25" y2="10" stroke="#ffffff" stroke-width="2.5" opacity="0.5"/>
+        <line x1="-35" y1="20" x2="-35" y2="36" stroke="#93c5fd" stroke-width="2" opacity="0.6"/>
+        <line x1="35" y1="20" x2="35" y2="36" stroke="#93c5fd" stroke-width="2" opacity="0.6"/>
+    </g>
+</svg>
