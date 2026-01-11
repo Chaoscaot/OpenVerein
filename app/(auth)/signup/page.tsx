@@ -33,12 +33,7 @@ export default function SignupPage() {
         validators: {
             onSubmit: formSchema,
         },
-        defaultValues: {
-            name: "",
-            email: "",
-            password: "",
-            confirmPassword: "",
-        },
+        defaultValues: {} as z.infer<typeof formSchema>,
         onSubmit: async ({ value }) => {
             setErrorMessage(null);
             setSubmitting(true);

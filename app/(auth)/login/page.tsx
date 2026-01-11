@@ -26,10 +26,7 @@ export default function LoginPage() {
         validators: {
             onSubmit: formSchema,
         },
-        defaultValues: {
-            email: "",
-            password: "",
-        },
+        defaultValues: {} as z.infer<typeof formSchema>,
         onSubmit: async ({ value, formApi }) => {
             setSubmitting(true);
             setErrorMessage(null);

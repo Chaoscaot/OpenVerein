@@ -9,7 +9,10 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as beitragssatz from "../beitragssatz.js";
+import type * as files from "../files.js";
 import type * as http from "../http.js";
+import type * as mitglieder from "../mitglieder.js";
 import type * as verein from "../verein.js";
 
 import type {
@@ -20,7 +23,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  beitragssatz: typeof beitragssatz;
+  files: typeof files;
   http: typeof http;
+  mitglieder: typeof mitglieder;
   verein: typeof verein;
 }>;
 

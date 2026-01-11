@@ -1,4 +1,3 @@
-import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/verein/nav/AppSideBar";
 import { SiteHeader } from "@/components/verein/nav/SiteHeader";
@@ -18,8 +17,7 @@ export default async function VereinLayout({ children, params }: { children: Rea
         >
             <AppSidebar id={verein} />
             <SidebarInset className="rounded-2xl m-0.5">
-                <SiteHeader />
-                <div className="p-4">{children}</div>
+                <div>{children}</div>
             </SidebarInset>
         </SidebarProvider>
     );

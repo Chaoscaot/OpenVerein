@@ -16,6 +16,7 @@ export default defineSchema({
             email: v.string(),
             phone: v.optional(v.string()),
         }),
+        mitgliederCounter: v.number(),
     })
         .index("by_name", ["name"])
         .index("by_owner", ["owner"]),
@@ -26,6 +27,7 @@ export default defineSchema({
         foto: v.optional(v.string()),
         vorname: v.string(),
         nachname: v.string(),
+        searchName: v.string(),
         titel: v.optional(v.string()),
         firma: v.boolean(),
         geburtsdatum: v.optional(v.string()),
@@ -36,7 +38,7 @@ export default defineSchema({
             country: v.string(),
         }),
         kontakt: v.object({
-            email: v.optional(v.string()),
+            email: v.string(),
             phone: v.optional(v.string()),
             phoneNote: v.optional(v.string()),
             phone2: v.optional(v.string()),
@@ -47,33 +49,43 @@ export default defineSchema({
         ehrenmitglied: v.boolean(),
         familienstand: v.optional(v.string()),
         beruf: v.optional(v.string()),
-        geschlecht: v.union(v.literal("männlich"), v.literal("weiblich"), v.literal("divers"), v.literal("keine Angabe")),
+        geschlecht: v.union(v.literal("m"), v.literal("w"), v.literal("d"), v.literal("n")),
         notiz: v.optional(v.string()),
         typ: v.union(v.literal("bewerber"), v.literal("mitglied"), v.literal("fördermitglied"), v.literal("kontakt"), v.literal("ausgeschieden")),
         beitragsSatzId: v.optional(v.id("beitrags_satz")),
-        beitragsEinzug: v.optional(v.union(v.literal("rechnung"), v.literal("lastschrift"), v.literal("bar"), v.literal("parent"))),
+        beitragsEinzug: v.optional(v.union(v.literal("r"), v.literal("l"), v.literal("b"), v.literal("p"))),
         datein: v.array(
             v.object({
                 name: v.string(),
-                url: v.string(),
-                uploadedAt: v.string(),
+                id: v.id("_storage"),
             })
         ),
         alias: v.optional(v.string()),
         rollen: v.array(v.id("vereins_rollen")),
-        uebergendesMitglied: v.optional(v.id("mitglied")),
+        parent: v.optional(v.id("mitglied")),
+        sepaMandat: v.optional(
+            v.object({
+                erstelltAm: v.string(),
+                iban: v.string(),
+                bic: v.string(),
+            })
+        ),
     })
         .index("by_vereinId", ["vereinId"])
         .index("by_userId", ["userId"])
         .index("by_rolle", ["vereinId", "rollen"])
-        .index("by_userId_vereinId", ["userId", "vereinId"]),
+        .index("by_userId_vereinId", ["userId", "vereinId"])
+        .searchIndex("mitglied_search", {
+            searchField: "searchName",
+            filterFields: ["vereinId"],
+        }),
     beitrags_satz: defineTable({
         vereinId: v.id("verein"),
         name: v.string(),
         betrag: v.number(),
         waehrung: v.string(),
         beschreibung: v.optional(v.string()),
-    }),
+    }).index("by_verein", ["vereinId"]),
     zahlungseingang: defineTable({
         mitgliedId: v.id("mitglied"),
         typ: v.union(v.literal("beitrag"), v.literal("spende"), v.literal("sonstiges")),
@@ -84,15 +96,6 @@ export default defineSchema({
         methode: v.union(v.literal("rechnung"), v.literal("lastschrift"), v.literal("bar")),
         notiz: v.optional(v.string()),
         referenz: v.optional(v.string()),
-    }).index("by_mitgliedId", ["mitgliedId"]),
-    sepa_lastschrift_mandat: defineTable({
-        mitgliedId: v.id("mitglied"),
-        mandatReferenz: v.string(),
-        erstelltAm: v.string(),
-        status: v.union(v.literal("aktiv"), v.literal("widerrufen")),
-        iban: v.string(),
-        bic: v.string(),
-        kontoinhaber: v.string(),
     }).index("by_mitgliedId", ["mitgliedId"]),
     mitglieder_liste: defineTable({
         vereinId: v.id("verein"),

@@ -75,6 +75,7 @@ export const create = mutation({
                 postalCode,
                 country,
             },
+            mitgliederCounter: 1,
         });
         return vereinId;
     },

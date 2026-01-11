@@ -1,4 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
+import { useEffect, useState } from "react";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
@@ -20,4 +21,18 @@ export function getCountries(lang = "de"): Array<string> {
         }
     }
     return [...new Set(countries)];
+}
+
+export function useDebounce<T>(cb: T, delay: number): T {
+    const [debounceValue, setDebounceValue] = useState<T>(cb);
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebounceValue(cb);
+        }, delay);
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [cb, delay]);
+    return debounceValue;
 }

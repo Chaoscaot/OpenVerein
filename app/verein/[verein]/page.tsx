@@ -1,3 +1,12 @@
+import { SiteHeader } from "@/components/verein/nav/SiteHeader";
+
 export default function VereinPage() {
-    return <h1>Verein Page</h1>;
+    return (
+        <>
+            <SiteHeader title="Dashboard"></SiteHeader>
+            <div className="p-4">
+                <h1>Vereins Seite</h1>
+            </div>
+        </>
+    );
 }

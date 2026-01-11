@@ -11,7 +11,6 @@ import {
     SidebarMenuSub,
     SidebarMenuSubButton,
     SidebarMenuSubItem,
-    SidebarRail,
 } from "@/components/ui/sidebar";
 import { VereinSwitcher } from "./VereinSwitcher";
 import { fetchQuery } from "convex/nextjs";
@@ -64,7 +63,7 @@ export async function AppSidebar({ id }: { id: string }) {
                                         <SidebarMenuSubItem>
                                             <SidebarMenuSubButton asChild>
                                                 <Link href={`/verein/${id}/mitglieder/neu`}>
-                                                    <span>Mitglied Anlegen</span>
+                                                    <span>Person Anlegen</span>
                                                 </Link>
                                             </SidebarMenuSubButton>
                                         </SidebarMenuSubItem>
