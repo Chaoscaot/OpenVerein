@@ -108,3 +108,60 @@ export const get = query({
         return verein;
     },
 });
+
+export const update = mutation({
+    args: {
+        id: v.id("verein"),
+        name: v.string(),
+        logo: v.optional(v.string()),
+        street: v.string(),
+        city: v.string(),
+        postalCode: v.string(),
+        country: v.string(),
+        email: v.string(),
+        phone: v.optional(v.string()),
+        sepaIban: v.optional(v.string()),
+        sepaBic: v.optional(v.string()),
+        sepaCreditorId: v.optional(v.string()),
+    },
+    async handler({ db, auth }, args) {
+        const user = await auth.getUserIdentity();
+        if (!user) {
+            throw new Error("Not authenticated");
+        }
+
+        const verein = await db.get(args.id);
+        if (!verein) {
+            throw new Error("Verein not found");
+        }
+
+        if (verein.owner !== user.subject) {
+            throw new Error("Access denied");
+        }
+
+        await db.patch(args.id, {
+            name: args.name,
+            logo: args.logo,
+            address: {
+                street: args.street,
+                city: args.city,
+                postalCode: args.postalCode,
+                country: args.country,
+            },
+            contact: {
+                email: args.email,
+                phone: args.phone,
+            },
+            sepa:
+                args.sepaIban && args.sepaBic && args.sepaCreditorId
+                    ? {
+                          iban: args.sepaIban,
+                          bic: args.sepaBic,
+                          creditorId: args.sepaCreditorId,
+                      }
+                    : undefined,
+        });
+
+        return args.id;
+    },
+});

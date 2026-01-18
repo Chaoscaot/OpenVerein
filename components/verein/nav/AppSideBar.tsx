@@ -19,7 +19,7 @@ import { getToken } from "@/lib/auth-server";
 import { Id } from "@/convex/_generated/dataModel";
 import { UserComponent } from "@/components/UserComponent";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronRight, DashboardBrowsingIcon, Person } from "@hugeicons/core-free-icons";
+import { ChevronRight, DashboardBrowsingIcon, Person, Settings } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
 
@@ -71,6 +71,12 @@ export async function AppSidebar({ id }: { id: string }) {
                                 </CollapsibleContent>
                             </SidebarMenuItem>
                         </Collapsible>
+                        <Link href={`/verein/${id}/settings`}>
+                            <SidebarMenuButton tooltip={"Vereinseinstellungen"}>
+                                <HugeiconsIcon icon={Settings} />
+                                <span>Einstellungen</span>
+                            </SidebarMenuButton>
+                        </Link>
                     </SidebarMenu>
                 </SidebarGroup>
             </SidebarContent>

@@ -21,27 +21,30 @@ import { Separator } from "@/components/ui/separator";
 import { useConvex, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { useUploadFile } from "@convex-dev/r2/react";
+import { useRouter } from "next/navigation";
 
 const formSchema = z
     .object({
-        nummer: z.number().positive("Mitgliedsnummer ist erforderlich"),
+        nummer: z.string().min(1, "Mitgliedsnummer ist erforderlich"),
         firma: z.boolean(),
         vorname: z.string().min(1, "Vorname ist erforderlich"),
         nachname: z.string().min(1, "Nachname ist erforderlich"),
-        titel: z.string(),
+        titel: z.string().optional(),
         geschlecht: z.enum(["m", "w", "d", "n"]),
-        familienstand: z.string(),
+        familienstand: z.string().optional(),
         typ: z.enum(["bewerber", "mitglied", "fördermitglied", "kontakt", "ausgeschieden"]),
-        beruf: z.string(),
+        geburtsdatum: z.date().optional(),
+        beruf: z.string().optional(),
         city: z.string("Bitte gib eine Stadt ein"),
-        postalcode: z.string("Bitte gib eine Postleitzahl ein").min(5, "Die Postleitzahl muss mindestens 5 Zeichen lang sein"),
+        postalCode: z.string("Bitte gib eine Postleitzahl ein").min(5, "Die Postleitzahl muss mindestens 5 Zeichen lang sein"),
         street: z.string().min(5, "Bitte gib eine Straße ein"),
         country: z.string().min(2, "Bitte wähle ein Land aus"),
         email: z.email("Bitte gib eine gültige E-Mail-Adresse ein"),
-        phone: z.string(),
-        phoneNote: z.string(),
-        phone2: z.string(),
-        phone2Note: z.string(),
+        phone: z.string().optional(),
+        phoneNote: z.string().optional(),
+        phone2: z.string().optional(),
+        phone2Note: z.string().optional(),
         beitrittsdatum: z.date(),
         austrittsdatum: z.date().optional(),
         parent: z.string().optional(),
@@ -51,7 +54,7 @@ const formSchema = z
         sepaBic: z.string().optional(),
         sepaMandatErstelltAm: z.date().optional(),
         beitragsSatzId: z.string().optional(),
-        datein: z.array(z.object({ id: z.string(), name: z.string() })),
+        datein: z.array(z.object({ id: z.string(), name: z.string(), saved: z.boolean().optional() })),
     })
     .superRefine((data, ctx) => {
         if (data.austrittsdatum) {
@@ -72,20 +75,26 @@ const formSchema = z
     });
 
 export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mitglied?: Doc<"mitglied"> }) {
+    const createUser = useMutation(api.mitglieder.create);
+    const updateUser = useMutation(api.mitglieder.update);
+    const router = useRouter();
+
     const form = useForm({
         validators: {
             onSubmit: formSchema,
         },
         defaultValues: {
-            nummer: mitglied?.nummer ?? verein.mitgliederCounter,
+            nummer: mitglied?.nummer ?? String(verein.mitgliederCounter),
             geschlecht: mitglied?.geschlecht ?? "n",
             firma: mitglied?.firma ?? false,
             typ: mitglied?.typ ?? "mitglied",
-            beitrittsdatum: mitglied?.beitrittsdatum ?? new Date(new Date().toDateString()),
+            ehrenmitglied: mitglied?.ehrenmitglied ?? false,
+            geburtsdatum: mitglied?.geburtsdatum ? new Date(mitglied.geburtsdatum) : undefined,
+            beitrittsdatum: mitglied?.beitrittsdatum ? new Date(mitglied.beitrittsdatum) : new Date(new Date().toDateString()),
             beruf: mitglied?.beruf,
             country: mitglied?.anschrift?.country ?? verein.address.country,
             city: mitglied?.anschrift?.city,
-            postalcode: mitglied?.anschrift?.postalCode,
+            postalCode: mitglied?.anschrift?.postalCode,
             street: mitglied?.anschrift?.street,
             email: mitglied?.kontakt?.email,
             familienstand: mitglied?.familienstand,
@@ -98,13 +107,100 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
             phone2Note: mitglied?.kontakt?.phone2Note,
             sepaIban: mitglied?.sepaMandat?.iban,
             sepaBic: mitglied?.sepaMandat?.bic,
-            sepaMandatErstelltAm: mitglied?.sepaMandat?.erstelltAm,
+            sepaMandatErstelltAm: mitglied?.sepaMandat?.erstelltAm ? new Date(mitglied.sepaMandat.erstelltAm) : undefined,
             beitragsEinzug: mitglied?.beitragsEinzug ?? "l",
-            austrittsdatum: mitglied?.austrittsdatum,
+            austrittsdatum: mitglied?.austrittsdatum ? new Date(mitglied.austrittsdatum) : undefined,
             parent: mitglied?.parent,
             beitragsSatzId: mitglied?.beitragsSatzId,
-            datein: (mitglied?.datein as { id: string; name: string }[]) ?? [],
+            datein: mitglied?.datein?.map((v) => ({ id: v.id, name: v.name, saved: true })) ?? [],
         } as z.infer<typeof formSchema>,
+        onSubmit: async (values) => {
+            console.log(values);
+            if (mitglied) {
+                await updateUser({
+                    id: mitglied._id,
+                    nummer: values.value.nummer,
+                    vorname: values.value.vorname,
+                    nachname: values.value.nachname,
+                    titel: values.value.titel,
+                    firma: values.value.firma,
+                    geschlecht: values.value.geschlecht,
+                    typ: values.value.typ,
+                    ehrenmitglied: values.value.ehrenmitglied,
+                    beruf: values.value.beruf,
+                    street: values.value.street,
+                    city: values.value.city,
+                    postalCode: values.value.postalCode,
+                    country: values.value.country,
+                    email: values.value.email,
+                    phone: values.value.phone,
+                    phoneNote: values.value.phoneNote,
+                    phone2: values.value.phone2,
+                    phone2Note: values.value.phone2Note,
+                    beitragsEinzug: values.value.beitragsEinzug,
+                    geburtsdatum: values.value.geburtsdatum ? values.value.geburtsdatum.toISOString().split("T")[0] : undefined,
+                    austrittsdatum: values.value.austrittsdatum ? values.value.austrittsdatum.toISOString().split("T")[0] : undefined,
+                    beitrittsdatum: values.value.beitrittsdatum.toISOString().split("T")[0],
+                    familienstand: values.value.familienstand && values.value.familienstand.length > 0 ? values.value.familienstand : undefined,
+                    parent: values.value.parent as Id<"mitglied"> | undefined,
+                    beitragsSatzId: values.value.beitragsSatzId as Id<"beitrags_satz"> | undefined,
+                    datein: values.value.datein.map((d) => ({ name: d.name, id: d.id })),
+                    sepaMandat:
+                        values.value.sepaIban && values.value.sepaBic && values.value.sepaMandatErstelltAm
+                            ? {
+                                  iban: values.value.sepaIban,
+                                  bic: values.value.sepaBic,
+                                  erstelltAm: values.value.sepaMandatErstelltAm.toISOString().split("T")[0],
+                              }
+                            : undefined,
+                });
+                toast.success("Mitglied erfolgreich aktualisiert");
+            } else {
+                await createUser({
+                    vereinId: verein._id as Id<"verein">,
+                    nummer: values.value.nummer,
+                    vorname: values.value.vorname,
+                    nachname: values.value.nachname,
+                    titel: values.value.titel,
+                    firma: values.value.firma,
+                    geschlecht: values.value.geschlecht,
+                    typ: values.value.typ,
+                    ehrenmitglied: values.value.ehrenmitglied,
+                    beruf: values.value.beruf,
+                    street: values.value.street,
+                    city: values.value.city,
+                    postalCode: values.value.postalCode,
+                    country: values.value.country,
+                    email: values.value.email,
+                    phone: values.value.phone,
+                    phoneNote: values.value.phoneNote,
+                    phone2: values.value.phone2,
+                    phone2Note: values.value.phone2Note,
+                    beitragsEinzug: values.value.beitragsEinzug,
+                    geburtsdatum: values.value.geburtsdatum ? values.value.geburtsdatum.toISOString().split("T")[0] : undefined,
+                    austrittsdatum: values.value.austrittsdatum ? values.value.austrittsdatum.toISOString().split("T")[0] : undefined,
+                    beitrittsdatum: values.value.beitrittsdatum.toISOString().split("T")[0],
+                    familienstand: values.value.familienstand && values.value.familienstand.length > 0 ? values.value.familienstand : undefined,
+                    parent: values.value.parent as Id<"mitglied"> | undefined,
+                    beitragsSatzId: values.value.beitragsSatzId as Id<"beitrags_satz"> | undefined,
+                    datein: values.value.datein.map((d) => ({ name: d.name, id: d.id })),
+                    sepaMandat:
+                        values.value.sepaIban && values.value.sepaBic && values.value.sepaMandatErstelltAm
+                            ? {
+                                  iban: values.value.sepaIban,
+                                  bic: values.value.sepaBic,
+                                  erstelltAm: values.value.sepaMandatErstelltAm.toISOString().split("T")[0],
+                              }
+                            : undefined,
+                });
+                toast.success("Mitglied erfolgreich erstellt");
+            }
+
+            router.replace("/verein/" + verein._id + "/mitglieder");
+        },
+        listeners: {
+            onChange: console.log,
+        },
     });
 
     const [isFirma, setIsFirma] = useState(false);
@@ -112,9 +208,12 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
     const [ehrenmitglied, setEhrenmitglied] = useState(mitglied?.ehrenmitglied ?? false);
     const countries = useMemo(() => getCountries(), []);
     const [uploading, setUploading] = useState(false);
+    const deleteFile = useMutation(api.files.deleteFile);
+    const [deletedFiles, setDeletedFiles] = useState<string[]>([]);
 
-    const generateUploadUrl = useMutation(api.files.generateUploadUrl);
     const convex = useConvex();
+
+    const uploadFile = useUploadFile(api.files);
 
     async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files![0];
@@ -134,23 +233,14 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
         setUploading(true);
         toast.promise(
             async () => {
-                const uploadUrl = await generateUploadUrl();
-
-                const result = await fetch(uploadUrl, {
-                    method: "POST",
-                    body: file,
-                    headers: {
-                        "Content-Type": file.type,
-                    },
-                });
-
-                const { storageId } = await result.json();
+                const result = await uploadFile(file);
 
                 form.setFieldValue("datein", [
                     ...form.getFieldValue("datein"),
                     {
-                        id: storageId,
+                        id: result,
                         name: file.name,
+                        saved: false,
                     },
                 ]);
                 setUploading(false);
@@ -164,7 +254,13 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
     }
 
     return (
-        <form className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+        <form
+            className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3"
+            onSubmit={(e) => {
+                e.preventDefault();
+                form.handleSubmit(e);
+            }}
+        >
             <SimpleCard title="Daten" description="Basisdaten des Mitglieds">
                 <FieldGroup>
                     <div className="grid grid-cols-2 gap-2">
@@ -176,13 +272,11 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     <Field data-invalid={isInvalid}>
                                         <FieldLabel htmlFor={field.name}>Mitglidsnummer</FieldLabel>
                                         <Input
-                                            type="number"
-                                            required
                                             id={field.name}
                                             name={field.name}
                                             value={field.state.value}
                                             onBlur={field.handleBlur}
-                                            onChange={(e) => field.handleChange(Number(e.target.value))}
+                                            onChange={(e) => field.handleChange(e.target.value)}
                                             aria-invalid={isInvalid}
                                             autoComplete="off"
                                         />
@@ -250,7 +344,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     <Field data-invalid={isInvalid}>
                                         <FieldLabel htmlFor={field.name}>Name</FieldLabel>
                                         <Input
-                                            required
                                             id={field.name}
                                             placeholder="Musterfirma GmbH"
                                             name={field.name}
@@ -300,7 +393,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                             <Field data-invalid={isInvalid}>
                                                 <FieldLabel htmlFor={field.name}>Vorname</FieldLabel>
                                                 <Input
-                                                    required
                                                     id={field.name}
                                                     placeholder="Max"
                                                     name={field.name}
@@ -323,7 +415,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                             <Field data-invalid={isInvalid}>
                                                 <FieldLabel htmlFor={field.name}>Nachname</FieldLabel>
                                                 <Input
-                                                    required
                                                     id={field.name}
                                                     placeholder="Mustermann"
                                                     name={field.name}
@@ -366,13 +457,13 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     }}
                                 />
                                 <form.Field
-                                    name="titel"
+                                    name="familienstand"
                                     children={(field) => {
                                         const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
                                         return (
                                             <Field data-invalid={isInvalid}>
                                                 <FieldLabel htmlFor={field.name}>Familienstand</FieldLabel>
-                                                <Select value={!field.state.value ? "none" : field.state.value} onValueChange={(v) => field.handleChange(v === "none" ? "" : v)}>
+                                                <Select value={field.state.value ?? "none"} onValueChange={(v) => field.handleChange(v === "none" ? undefined : v)}>
                                                     <SelectTrigger>
                                                         <SelectValue />
                                                     </SelectTrigger>
@@ -399,7 +490,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                             <Field data-invalid={isInvalid}>
                                                 <FieldLabel htmlFor={field.name}>Beruf</FieldLabel>
                                                 <Input
-                                                    required
                                                     id={field.name}
                                                     placeholder="Schüler"
                                                     name={field.name}
@@ -409,6 +499,19 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                                     aria-invalid={isInvalid}
                                                     autoComplete="off"
                                                 />
+                                                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                                            </Field>
+                                        );
+                                    }}
+                                />
+                                <form.Field
+                                    name="geburtsdatum"
+                                    children={(field) => {
+                                        const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                                        return (
+                                            <Field data-invalid={isInvalid}>
+                                                <FieldLabel htmlFor={field.name}>Geburtsdatum</FieldLabel>
+                                                <DatePicker value={field.state.value} onChange={(date) => field.handleChange(date)} />
                                                 {isInvalid && <FieldError errors={field.state.meta.errors} />}
                                             </Field>
                                         );
@@ -431,7 +534,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     <Input
                                         type="text"
                                         placeholder="Musterstraße 1"
-                                        required
                                         id={field.name}
                                         name={field.name}
                                         value={field.state.value}
@@ -447,7 +549,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     />
                     <div className="grid grid-cols-3 gap-2">
                         <form.Field
-                            name="postalcode"
+                            name="postalCode"
                             children={(field) => {
                                 const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
                                 return (
@@ -455,7 +557,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                         <FieldLabel htmlFor={field.name}>Postleitzahl</FieldLabel>
                                         <Input
                                             placeholder="10176"
-                                            required
                                             id={field.name}
                                             name={field.name}
                                             value={field.state.value}
@@ -479,7 +580,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                         <Input
                                             type="text"
                                             placeholder="Berlin"
-                                            required
                                             id={field.name}
                                             name={field.name}
                                             value={field.state.value}
@@ -535,7 +635,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     <Input
                                         type="email"
                                         placeholder="max.mustermann@openverein.eu"
-                                        required
                                         id={field.name}
                                         name={field.name}
                                         value={field.state.value}
@@ -757,7 +856,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     <Input
                                         type="text"
                                         placeholder="DE89 3704 0044 0532 0130 00"
-                                        required={isSepa}
                                         id={field.name}
                                         name={field.name}
                                         value={field.state.value}
@@ -781,7 +879,6 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                     <Input
                                         type="text"
                                         placeholder="COBADEFFXXX"
-                                        required={isSepa}
                                         id={field.name}
                                         name={field.name}
                                         value={field.state.value}
@@ -838,7 +935,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                                     variant="ghost"
                                                     size="icon"
                                                     onClick={async () => {
-                                                        const url = await convex.query(api.files.getUrl, { fileId: datei.id as Id<"_storage"> });
+                                                        const url = await convex.query(api.files.getUrl, { fileId: datei.id });
                                                         window.open(url!, "_blank");
                                                     }}
                                                 >
@@ -852,6 +949,12 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                                             "datein",
                                                             field.state.value.filter((d) => d.id !== datei.id)
                                                         );
+
+                                                        if (!datei.saved) {
+                                                            deleteFile({ fileId: datei.id });
+                                                        } else {
+                                                            setDeletedFiles([...deletedFiles, datei.id]);
+                                                        }
                                                     }}
                                                 >
                                                     <HugeiconsIcon icon={Trash} />
@@ -867,6 +970,11 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     />
                 </FieldGroup>
             </SimpleCard>
+            <div>
+                <Button type="submit" onClick={form.handleSubmit}>
+                    Speichern
+                </Button>
+            </div>
         </form>
     );
 }

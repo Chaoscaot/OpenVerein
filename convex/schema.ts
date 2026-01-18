@@ -16,6 +16,13 @@ export default defineSchema({
             email: v.string(),
             phone: v.optional(v.string()),
         }),
+        sepa: v.optional(
+            v.object({
+                iban: v.string(),
+                bic: v.string(),
+                creditorId: v.string(),
+            })
+        ),
         mitgliederCounter: v.number(),
     })
         .index("by_name", ["name"])
@@ -57,7 +64,7 @@ export default defineSchema({
         datein: v.array(
             v.object({
                 name: v.string(),
-                id: v.id("_storage"),
+                id: v.string(),
             })
         ),
         alias: v.optional(v.string()),
