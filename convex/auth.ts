@@ -5,6 +5,8 @@ import { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import { betterAuth } from "better-auth/minimal";
 import authConfig from "./auth.config";
+import { resend } from "./sendMails";
+import { requireActionCtx } from "@convex-dev/better-auth/utils";
 
 const siteUrl = process.env.SITE_URL!;
 
@@ -16,7 +18,10 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
         database: authComponent.adapter(ctx),
         emailAndPassword: {
             enabled: true,
-            requireEmailVerification: false,
+            requireEmailVerification: true,
+        },
+        emailVerification: {
+            sendVerificationEmail: async ({ user, url }) => {},
         },
         plugins: [convex({ authConfig })],
     });
