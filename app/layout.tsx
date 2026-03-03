@@ -5,6 +5,8 @@ import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getToken } from "@/lib/auth-server";
+
+import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geistSans = Geist({
@@ -36,6 +38,7 @@ export default async function RootLayout({
                         {children}
                         <Toaster />
                     </ThemeProvider>
+                    <Analytics />
                     <SpeedInsights />
                 </body>
             </ConvexClientProvider>
