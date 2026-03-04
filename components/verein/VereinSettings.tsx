@@ -5,7 +5,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Doc, Id } from "@/convex/_generated/dataModel";
-import { getCountries } from "@/lib/utils";
+import { getCountries } from "@/lib/utils-client";
 import { useForm } from "@tanstack/react-form";
 import { useMemo, useState } from "react";
 import z from "zod";
@@ -128,7 +128,7 @@ export function VereinSettings({ verein }: { verein: Doc<"verein"> }) {
                 loading: "Logo wird hochgeladen...",
                 success: "Logo erfolgreich hochgeladen",
                 error: "Fehler beim Hochladen des Logos",
-            }
+            },
         );
     }
 

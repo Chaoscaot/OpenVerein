@@ -10,13 +10,13 @@ export const OpenVereinLayout = ({ children }: { children: React.ReactNode }) =>
                 darkMode: "class",
             }}
         >
-            <Body className="bg-white font-koala">
+            <Body className="bg-white font-sans">
                 <Preview>The Unified Management Platform for your Organization</Preview>
                 <Container className="mx-auto py-5 pb-12">
-                    <Img src={`${baseUrl}/public/icon.svg`} width="170" height="50" alt="Koala" className="mx-auto" />
+                    <Img src={`${baseUrl}/icon.svg`} width="170" height="50" alt="OpenVerein" className="mx-auto" />
                     {children}
                     <Hr className="border-[#cccccc] my-5" />
-                    <Text className="text-[#8898aa] text-[12px]">470 Noor Ave STE B #1148, South San Francisco, CA 94080</Text>
+                    <Text className="text-[#8898aa] text-[12px]">https://github.com/Chaoscaot/OpenVerein</Text>
                 </Container>
             </Body>
         </Tailwind>
