@@ -1,34 +1,45 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
+import { hasPermission, requirePermission } from "./rbac";
 
 export const list = query({
-    async handler({ db, auth }) {
-        const user = await auth.getUserIdentity();
+    async handler(ctx) {
+        const user = await ctx.auth.getUserIdentity();
         if (!user) {
             throw new Error("Not authenticated");
         }
 
-        const vereinList = await db
+        const vereinList = await ctx.db
             .query("verein")
             .withIndex("by_owner", (q) => q.eq("owner", user.subject))
             .collect();
 
-        const mitglidsVereine = await db
+        const mitglidsVereine = await ctx.db
             .query("mitglied")
             .withIndex("by_userId", (q) => q.eq("userId", user.subject))
             .collect();
 
-        const mitglidsVereinIds = (
+        const visibleMitgliedsVereine = (
             await Promise.all(
                 mitglidsVereine.map(async (mitglied) => {
-                    const verein = await db.get(mitglied.vereinId);
-                    return verein;
-                })
-            )
-        ).filter((v) => v !== null);
+                    const verein = await ctx.db.get(mitglied.vereinId);
+                    if (!verein) {
+                        return null;
+                    }
 
-        return [...vereinList, ...mitglidsVereinIds];
+                    const allowed = await hasPermission(ctx, verein._id, "verein.view");
+                    return allowed ? verein : null;
+                }),
+            )
+        ).filter((verein) => verein !== null);
+
+        const deduped = new Map<string, (typeof vereinList)[number]>();
+        for (const verein of [...vereinList, ...visibleMitgliedsVereine]) {
+            deduped.set(verein._id, verein);
+        }
+
+        return Array.from(deduped.values());
     },
 });
 
@@ -85,27 +96,9 @@ export const get = query({
     args: {
         id: v.id("verein"),
     },
-    async handler({ db, auth }, { id }) {
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
-        }
-        const verein = await db.get("verein", id);
-        if (!verein) {
-            throw new Error("Verein not found");
-        }
-
-        if (verein.owner !== user.subject) {
-            const mitglied = await db
-                .query("mitglied")
-                .withIndex("by_userId_vereinId", (q) => q.eq("userId", user.subject).eq("vereinId", id))
-                .first();
-            if (!mitglied) {
-                throw new Error("Access denied");
-            }
-        }
-
-        return verein;
+    async handler(ctx, { id }) {
+        const access = await requirePermission(ctx, id, "verein.view");
+        return access.verein;
     },
 });
 
@@ -124,22 +117,10 @@ export const update = mutation({
         sepaBic: v.optional(v.string()),
         sepaCreditorId: v.optional(v.string()),
     },
-    async handler({ db, auth }, args) {
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
-        }
+    async handler(ctx, args) {
+        await requirePermission(ctx, args.id, "settings.edit");
 
-        const verein = await db.get(args.id);
-        if (!verein) {
-            throw new Error("Verein not found");
-        }
-
-        if (verein.owner !== user.subject) {
-            throw new Error("Access denied");
-        }
-
-        await db.patch(args.id, {
+        await ctx.db.patch(args.id, {
             name: args.name,
             logo: args.logo,
             address: {

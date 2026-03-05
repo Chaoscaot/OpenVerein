@@ -25,3 +25,16 @@ export const ResetEmail = ({ link }: { link: string }) => (
         </Button>
     </OpenVereinLayout>
 );
+
+export const MitgliedLinkEmail = ({ link, vereinName, mitgliedName }: { link: string; vereinName: string; mitgliedName: string }) => (
+    <OpenVereinLayout>
+        <Text className="text-2xl font-bold">Mitgliedschaft verknüpfen</Text>
+        <Text>
+            Du wurdest eingeladen, dein OpenVerein-Konto mit der Mitgliedschaft <strong>{mitgliedName}</strong> im Verein <strong>{vereinName}</strong> zu verknüpfen.
+        </Text>
+        <Button href={link} className="bg-blue-500 text-white px-4 py-2 rounded">
+            Jetzt verknüpfen
+        </Button>
+        <Text>Wenn du diese Einladung nicht erwartest, kannst du diese E-Mail ignorieren.</Text>
+    </OpenVereinLayout>
+);

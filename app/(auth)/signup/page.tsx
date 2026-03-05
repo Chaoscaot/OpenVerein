@@ -11,7 +11,7 @@ import { useForm } from "@tanstack/react-form";
 import { Spinner } from "@/components/ui/spinner";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const formSchema = z
     .object({
@@ -29,6 +29,8 @@ export default function SignupPage() {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const callbackURL = searchParams.get("callbackURL") || "/verein";
     const form = useForm({
         validators: {
             onSubmit: formSchema,
@@ -41,8 +43,8 @@ export default function SignupPage() {
                 name: value.name,
                 email: value.email,
                 password: value.password,
-                callbackURL: "/verein",
-                fetchOptions: { onSuccess: () => router.replace("/verein") },
+                callbackURL,
+                fetchOptions: { onSuccess: () => router.replace(callbackURL) },
             });
             if (error) {
                 setErrorMessage(error.message ?? null);
@@ -164,7 +166,7 @@ export default function SignupPage() {
                 </Field>
                 <FieldSeparator>Oder</FieldSeparator>
                 <Field>
-                    <Button variant="outline" type="button" onClick={() => authClient.signIn.social({ provider: "google", callbackURL: "/verein" })}>
+                    <Button variant="outline" type="button" onClick={() => authClient.signIn.social({ provider: "google", callbackURL })}>
                         <HugeiconsIcon icon={GoogleIcon} />
                         Mit Google Anmelden
                     </Button>

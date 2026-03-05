@@ -9,7 +9,7 @@ import { GoogleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useForm } from "@tanstack/react-form";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import z from "zod";
 
@@ -22,6 +22,8 @@ export default function LoginPage() {
     const [submitting, setSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const callbackURL = searchParams.get("callbackURL") || "/verein";
     const form = useForm({
         validators: {
             onSubmit: formSchema,
@@ -33,9 +35,9 @@ export default function LoginPage() {
             const { error } = await authClient.signIn.email({
                 email: value.email,
                 password: value.password,
-                callbackURL: "/verein",
+                callbackURL,
                 rememberMe: true,
-                fetchOptions: { onSuccess: () => router.replace("/verein") },
+                fetchOptions: { onSuccess: () => router.replace(callbackURL) },
             });
             if (error) {
                 if (error.code === "INVALID_EMAIL_OR_PASSWORD") {
@@ -119,7 +121,7 @@ export default function LoginPage() {
                 </Field>
                 <FieldSeparator>Oder</FieldSeparator>
                 <Field>
-                    <Button variant="outline" type="button">
+                    <Button variant="outline" type="button" onClick={() => authClient.signIn.social({ provider: "google", callbackURL })}>
                         <HugeiconsIcon icon={GoogleIcon} />
                         Mit Google Anmelden
                     </Button>

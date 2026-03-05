@@ -18,11 +18,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Document, Trash, View } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { useConvex, useMutation } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { useUploadFile } from "@convex-dev/r2/react";
 import { useRouter } from "next/navigation";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 const formSchema = z
     .object({
@@ -55,6 +57,7 @@ const formSchema = z
         sepaMandatErstelltAm: z.date().optional(),
         beitragsSatzId: z.string().optional(),
         datein: z.array(z.object({ id: z.string(), name: z.string(), saved: z.boolean().optional() })),
+        rollen: z.array(z.string()).optional(),
     })
     .superRefine((data, ctx) => {
         if (data.austrittsdatum) {
@@ -78,6 +81,12 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
     const createUser = useMutation(api.mitglieder.create);
     const updateUser = useMutation(api.mitglieder.update);
     const router = useRouter();
+    const acl = useQuery(api.permissions.getMyPermissions, { vereinId: verein._id });
+
+    const canLinkAccount = acl?.permissions.includes("mitglied.linkAccount") ?? false;
+    const canAssignRoles = acl?.permissions.includes("rolle.assign") ?? false;
+
+    const vereinsRollen = useQuery(api.rollen.list, canAssignRoles ? { vereinId: verein._id } : "skip");
 
     const form = useForm({
         validators: {
@@ -113,6 +122,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
             parent: mitglied?.parent,
             beitragsSatzId: mitglied?.beitragsSatzId,
             datein: mitglied?.datein?.map((v) => ({ id: v.id, name: v.name, saved: true })) ?? [],
+            rollen: mitglied?.rollen?.map((value) => value as string) ?? [],
         } as z.infer<typeof formSchema>,
         onSubmit: async (values) => {
             console.log(values);
@@ -145,6 +155,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     parent: values.value.parent as Id<"mitglied"> | undefined,
                     beitragsSatzId: values.value.beitragsSatzId as Id<"beitrags_satz"> | undefined,
                     datein: values.value.datein.map((d) => ({ name: d.name, id: d.id })),
+                    rollen: canAssignRoles ? (values.value.rollen?.map((id) => id as Id<"vereins_rollen">) ?? []) : undefined,
                     sepaMandat:
                         values.value.sepaIban && values.value.sepaBic && values.value.sepaMandatErstelltAm
                             ? {
@@ -184,6 +195,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     parent: values.value.parent as Id<"mitglied"> | undefined,
                     beitragsSatzId: values.value.beitragsSatzId as Id<"beitrags_satz"> | undefined,
                     datein: values.value.datein.map((d) => ({ name: d.name, id: d.id })),
+                    rollen: canAssignRoles ? (values.value.rollen?.map((id) => id as Id<"vereins_rollen">) ?? []) : undefined,
                     sepaMandat:
                         values.value.sepaIban && values.value.sepaBic && values.value.sepaMandatErstelltAm
                             ? {
@@ -209,7 +221,12 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
     const countries = useMemo(() => getCountries(), []);
     const [uploading, setUploading] = useState(false);
     const deleteFile = useMutation(api.files.deleteFile);
+    const requestAccountLinkInvite = useMutation(api.mitglieder.requestAccountLinkInvite);
+    const removeAccountLink = useMutation(api.mitglieder.removeAccountLink);
     const [deletedFiles, setDeletedFiles] = useState<string[]>([]);
+    const [accountLinked, setAccountLinked] = useState(!!mitglied?.userId);
+    const [inviteEmail, setInviteEmail] = useState(mitglied?.kontakt?.email ?? "");
+    const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
     const convex = useConvex();
 
@@ -970,6 +987,109 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     />
                 </FieldGroup>
             </SimpleCard>
+            {(canLinkAccount || canAssignRoles) && (
+                <SimpleCard title="Konto & Rollen" description="OpenVerein-Konto verknüpfen und Rollen zuweisen">
+                    <FieldGroup>
+                        {canLinkAccount && (
+                            <Field>
+                                <FieldLabel>Kontoverknüpfung</FieldLabel>
+                                <div className="flex items-center gap-3 text-sm">
+                                    <span className={accountLinked ? "text-green-600 font-medium" : "text-red-600 font-medium"}>{accountLinked ? "✓ Verknüpft" : "✗ Nicht verknüpft"}</span>
+                                    {mitglied ? (
+                                        accountLinked ? (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                onClick={async () => {
+                                                    await removeAccountLink({ mitgliedId: mitglied._id });
+                                                    setAccountLinked(false);
+                                                    toast.success("Kontoverknüpfung entfernt");
+                                                }}
+                                            >
+                                                Verknüpfung entfernen
+                                            </Button>
+                                        ) : (
+                                            <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+                                                <DialogTrigger asChild>
+                                                    <Button type="button" variant="outline">
+                                                        Verknüpfungs-E-Mail senden
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent>
+                                                    <DialogHeader>
+                                                        <DialogTitle>Verknüpfungs-E-Mail senden</DialogTitle>
+                                                        <DialogDescription>Empfänger eingeben. Der Link führt zur Konto-Anmeldung/Registrierung und danach zur Verknüpfung.</DialogDescription>
+                                                    </DialogHeader>
+                                                    <div className="grid gap-2 py-2">
+                                                        <FieldLabel htmlFor="invite-email">E-Mail</FieldLabel>
+                                                        <Input id="invite-email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="mitglied@example.org" />
+                                                    </div>
+                                                    <DialogFooter>
+                                                        <Button
+                                                            type="button"
+                                                            disabled={!inviteEmail}
+                                                            onClick={async () => {
+                                                                await requestAccountLinkInvite({
+                                                                    mitgliedId: mitglied._id,
+                                                                    email: inviteEmail,
+                                                                });
+                                                                setInviteDialogOpen(false);
+                                                                toast.success("Verknüpfungs-E-Mail wurde versendet");
+                                                            }}
+                                                        >
+                                                            Einladung senden
+                                                        </Button>
+                                                    </DialogFooter>
+                                                </DialogContent>
+                                            </Dialog>
+                                        )
+                                    ) : (
+                                        <span className="text-muted-foreground">Nach dem Speichern kann eine Verknüpfungs-E-Mail gesendet werden.</span>
+                                    )}
+                                </div>
+                            </Field>
+                        )}
+
+                        {canAssignRoles && (
+                            <form.Field
+                                name="rollen"
+                                children={(field) => {
+                                    const selected = field.state.value ?? [];
+
+                                    return (
+                                        <Field>
+                                            <FieldLabel>Rollen</FieldLabel>
+                                            <div className="grid gap-2">
+                                                {(vereinsRollen ?? []).length === 0 && <p className="text-sm text-muted-foreground">Keine Rollen verfügbar.</p>}
+                                                {(vereinsRollen ?? []).map((rolle) => {
+                                                    const checked = selected.includes(rolle._id);
+
+                                                    return (
+                                                        <label key={rolle._id} className="flex items-center gap-2 text-sm">
+                                                            <Checkbox
+                                                                checked={checked}
+                                                                onCheckedChange={(value) => {
+                                                                    if (value) {
+                                                                        field.handleChange(Array.from(new Set([...selected, rolle._id])));
+                                                                        return;
+                                                                    }
+
+                                                                    field.handleChange(selected.filter((item) => item !== rolle._id));
+                                                                }}
+                                                            />
+                                                            <span>{rolle.name}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </Field>
+                                    );
+                                }}
+                            />
+                        )}
+                    </FieldGroup>
+                </SimpleCard>
+            )}
             <div>
                 <Button type="submit" onClick={form.handleSubmit}>
                     Speichern

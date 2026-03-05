@@ -1,17 +1,15 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requirePermission } from "./rbac";
 
 export const list = query({
     args: {
         vereinId: v.id("verein"),
     },
-    handler: async ({ db, auth }, { vereinId }) => {
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
-        }
+    handler: async (ctx, { vereinId }) => {
+        await requirePermission(ctx, vereinId, "beitragssatz.view");
 
-        const beitragssaetze = await db
+        const beitragssaetze = await ctx.db
             .query("beitrags_satz")
             .withIndex("by_verein", (q) => q.eq("vereinId", vereinId))
             .collect();
@@ -24,17 +22,17 @@ export const get = query({
     args: {
         id: v.optional(v.id("beitrags_satz")),
     },
-    handler: async ({ db, auth }, { id }) => {
+    handler: async (ctx, { id }) => {
         if (!id) {
             return null;
         }
 
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
+        const beitragssatz = await ctx.db.get(id);
+        if (!beitragssatz) {
+            return null;
         }
 
-        const beitragssatz = await db.get("beitrags_satz", id);
+        await requirePermission(ctx, beitragssatz.vereinId, "beitragssatz.view");
         return beitragssatz;
     },
 });
@@ -47,13 +45,10 @@ export const create = mutation({
         waehrung: v.string(),
         beschreibung: v.optional(v.string()),
     },
-    handler: async ({ db, auth }, values) => {
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
-        }
+    handler: async (ctx, values) => {
+        await requirePermission(ctx, values.vereinId, "beitragssatz.create");
 
-        const beitragssatzId = await db.insert("beitrags_satz", {
+        const beitragssatzId = await ctx.db.insert("beitrags_satz", {
             vereinId: values.vereinId,
             name: values.name,
             betrag: values.betrag,
@@ -73,18 +68,15 @@ export const update = mutation({
         waehrung: v.string(),
         beschreibung: v.optional(v.string()),
     },
-    handler: async ({ db, auth }, values) => {
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
-        }
-
-        const existing = await db.get("beitrags_satz", values.id);
+    handler: async (ctx, values) => {
+        const existing = await ctx.db.get(values.id);
         if (!existing) {
             throw new Error("Beitragssatz not found");
         }
 
-        await db.patch("beitrags_satz", values.id, {
+        await requirePermission(ctx, existing.vereinId, "beitragssatz.edit");
+
+        await ctx.db.patch(values.id, {
             name: values.name,
             betrag: values.betrag,
             waehrung: values.waehrung,
@@ -99,19 +91,16 @@ export const remove = mutation({
     args: {
         id: v.id("beitrags_satz"),
     },
-    handler: async ({ db, auth }, { id }) => {
-        const user = await auth.getUserIdentity();
-        if (!user) {
-            throw new Error("Not authenticated");
-        }
-
-        const beitragssatz = await db.get("beitrags_satz", id);
+    handler: async (ctx, { id }) => {
+        const beitragssatz = await ctx.db.get(id);
         if (!beitragssatz) {
             throw new Error("Beitragssatz not found");
         }
 
+        await requirePermission(ctx, beitragssatz.vereinId, "beitragssatz.delete");
+
         // Check if any members use this beitragssatz
-        const membersWithBeitragssatz = await db
+        const membersWithBeitragssatz = await ctx.db
             .query("mitglied")
             .withIndex("by_vereinId", (q) => q.eq("vereinId", beitragssatz.vereinId))
             .filter((q) => q.eq(q.field("beitragsSatzId"), id))
@@ -121,6 +110,16 @@ export const remove = mutation({
             throw new Error("Beitragssatz wird noch von Mitgliedern verwendet");
         }
 
-        await db.delete("beitrags_satz", id);
+        const buchungMitBeitragssatz = await ctx.db
+            .query("kassen_buchung")
+            .withIndex("by_vereinId", (q) => q.eq("vereinId", beitragssatz.vereinId))
+            .filter((q) => q.eq(q.field("beitragsSatzId"), id))
+            .first();
+
+        if (buchungMitBeitragssatz) {
+            throw new Error("Beitragssatz wird noch in Buchungen verwendet");
+        }
+
+        await ctx.db.delete(id);
     },
 });

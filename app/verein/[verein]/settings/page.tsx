@@ -11,7 +11,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ verei
     return (
         <>
             <SiteHeader title="Vereinseinstellungen"></SiteHeader>
-            <div className="p-4">
+            <div className="p-4 space-y-4">
                 <VereinSettings verein={v} />
             </div>
         </>

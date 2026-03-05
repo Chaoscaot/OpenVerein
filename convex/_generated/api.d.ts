@@ -11,8 +11,12 @@
 import type * as auth from "../auth.js";
 import type * as beitragssatz from "../beitragssatz.js";
 import type * as files from "../files.js";
+import type * as finanzen from "../finanzen.js";
 import type * as http from "../http.js";
 import type * as mitglieder from "../mitglieder.js";
+import type * as permissions from "../permissions.js";
+import type * as rbac from "../rbac.js";
+import type * as rollen from "../rollen.js";
 import type * as sendMails from "../sendMails.js";
 import type * as sepa from "../sepa.js";
 import type * as verein from "../verein.js";
@@ -27,8 +31,12 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   beitragssatz: typeof beitragssatz;
   files: typeof files;
+  finanzen: typeof finanzen;
   http: typeof http;
   mitglieder: typeof mitglieder;
+  permissions: typeof permissions;
+  rbac: typeof rbac;
+  rollen: typeof rollen;
   sendMails: typeof sendMails;
   sepa: typeof sepa;
   verein: typeof verein;

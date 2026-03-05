@@ -21,7 +21,7 @@ export default defineSchema({
                 iban: v.string(),
                 bic: v.string(),
                 creditorId: v.string(),
-            })
+            }),
         ),
         mitgliederCounter: v.number(),
     })
@@ -65,7 +65,7 @@ export default defineSchema({
             v.object({
                 name: v.string(),
                 id: v.string(),
-            })
+            }),
         ),
         alias: v.optional(v.string()),
         rollen: v.array(v.id("vereins_rollen")),
@@ -75,7 +75,7 @@ export default defineSchema({
                 erstelltAm: v.string(),
                 iban: v.string(),
                 bic: v.string(),
-            })
+            }),
         ),
     })
         .index("by_vereinId", ["vereinId"])
@@ -116,5 +116,44 @@ export default defineSchema({
         vereinId: v.id("verein"),
         name: v.string(),
         berechtigungen: v.array(v.string()),
-    }),
+    }).index("by_vereinId", ["vereinId"]),
+    mitglied_konto_link_invite: defineTable({
+        vereinId: v.id("verein"),
+        mitgliedId: v.id("mitglied"),
+        email: v.string(),
+        token: v.string(),
+        createdAt: v.string(),
+        expiresAt: v.string(),
+        usedAt: v.optional(v.string()),
+    })
+        .index("by_token", ["token"])
+        .index("by_mitgliedId", ["mitgliedId"]),
+    kasse: defineTable({
+        vereinId: v.id("verein"),
+        name: v.string(),
+        typ: v.union(v.literal("barkasse"), v.literal("bankkonto"), v.literal("kreditkarte"), v.literal("paypal"), v.literal("sonstiges")),
+        iban: v.optional(v.string()), // If bank account
+        bic: v.optional(v.string()),
+        waehrung: v.string(),
+        anfangsbestand: v.number(),
+        aktuellerBestand: v.number(),
+        beschreibung: v.optional(v.string()),
+        aktiv: v.boolean(),
+    }).index("by_vereinId", ["vereinId"]),
+
+    kassen_buchung: defineTable({
+        kasseId: v.id("kasse"),
+        vereinId: v.id("verein"),
+        betrag: v.number(), // Positive for income, negative for expense
+        datum: v.string(),
+        kategorie: v.optional(v.string()),
+        zweck: v.string(),
+        belegNummer: v.optional(v.string()),
+        beitragsSatzId: v.optional(v.id("beitrags_satz")),
+        mitgliedId: v.optional(v.id("mitglied")), // If related to a member
+    })
+        .index("by_kasseId", ["kasseId"])
+        .index("by_beitragsSatzId", ["beitragsSatzId"])
+        .index("by_mitgliedId", ["mitgliedId"])
+        .index("by_vereinId", ["vereinId", "datum"]),
 });

@@ -4,7 +4,7 @@ import { Resend } from "@convex-dev/resend";
 import { action, internalAction, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { pretty, render } from "@react-email/render";
-import { VerifyEmail, ResetEmail } from "../emails/login";
+import { VerifyEmail, ResetEmail, MitgliedLinkEmail } from "../emails/login";
 
 export const resend: Resend = new Resend(components.resend, { testMode: false });
 
@@ -34,6 +34,23 @@ export const sendResetEmail = internalAction({
             to,
             subject: "Passwort zurücksetzen für OpenVerein",
             html: await render(<ResetEmail link={link} />),
+        });
+    },
+});
+
+export const sendMitgliedLinkInviteEmail = internalAction({
+    args: {
+        to: v.string(),
+        link: v.string(),
+        vereinName: v.string(),
+        mitgliedName: v.string(),
+    },
+    handler: async (ctx, { to, link, vereinName, mitgliedName }) => {
+        await resend.sendEmail(ctx, {
+            from: "OpenVerein <accounts@openverein.eu>",
+            to,
+            subject: `Mitgliedschaft in ${vereinName} verknüpfen`,
+            html: await render(<MitgliedLinkEmail link={link} vereinName={vereinName} mitgliedName={mitgliedName} />),
         });
     },
 });
