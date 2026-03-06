@@ -127,7 +127,7 @@ export default function LoginPage() {
                     </Button>
                     <FieldDescription className="text-center">
                         Noch kein Konto erstellt?{" "}
-                        <Link href="/signup" className="underline-offset-4 hover:underline">
+                        <Link href={`/signup?callbackURL=${encodeURIComponent(callbackURL)}`} className="underline-offset-4 hover:underline">
                             Jetzt Registrieren!
                         </Link>
                     </FieldDescription>

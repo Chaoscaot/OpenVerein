@@ -31,6 +31,8 @@ export default function SignupPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const callbackURL = searchParams.get("callbackURL") || "/verein";
+    const verifyWaitURL = `/verify-email?callbackURL=${encodeURIComponent(callbackURL)}`;
+    const verifyConfirmURL = "/verify-email/confirmed";
     const form = useForm({
         validators: {
             onSubmit: formSchema,
@@ -39,12 +41,12 @@ export default function SignupPage() {
         onSubmit: async ({ value }) => {
             setErrorMessage(null);
             setSubmitting(true);
-            const { data, error } = await authClient.signUp.email({
+            const { error } = await authClient.signUp.email({
                 name: value.name,
                 email: value.email,
                 password: value.password,
-                callbackURL,
-                fetchOptions: { onSuccess: () => router.replace(callbackURL) },
+                callbackURL: verifyConfirmURL,
+                fetchOptions: { onSuccess: () => router.replace(verifyWaitURL) },
             });
             if (error) {
                 setErrorMessage(error.message ?? null);
@@ -171,7 +173,7 @@ export default function SignupPage() {
                         Mit Google Anmelden
                     </Button>
                     <FieldDescription className="px-6 text-center">
-                        Konto bereits erstellt? <Link href="/login">Jetzt Anmelden!</Link>
+                        Konto bereits erstellt? <Link href={`/login?callbackURL=${encodeURIComponent(callbackURL)}`}>Jetzt Anmelden!</Link>
                     </FieldDescription>
                 </Field>
             </FieldGroup>

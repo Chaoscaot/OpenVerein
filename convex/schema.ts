@@ -156,4 +156,24 @@ export default defineSchema({
         .index("by_beitragsSatzId", ["beitragsSatzId"])
         .index("by_mitgliedId", ["mitgliedId"])
         .index("by_vereinId", ["vereinId", "datum"]),
+    buchung_rechnung: defineTable({
+        buchungId: v.id("kassen_buchung"),
+        vereinId: v.id("verein"),
+        fileId: v.string(),
+        dateiname: v.string(),
+        mimeType: v.optional(v.string()),
+        format: v.union(v.literal("pdf"), v.literal("e-rechnung")),
+        rechnungsnummer: v.optional(v.string()),
+        rechnungsdatum: v.optional(v.string()),
+        rechnungsempfaenger: v.optional(v.string()),
+        betrag: v.number(),
+        waehrung: v.string(),
+        kommentar: v.optional(v.string()),
+        betragAbgleich: v.boolean(),
+        abweichungBetrag: v.number(),
+        createdAt: v.string(),
+        updatedAt: v.string(),
+    })
+        .index("by_buchungId", ["buchungId"])
+        .index("by_vereinId", ["vereinId"]),
 });

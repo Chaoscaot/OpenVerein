@@ -34,6 +34,8 @@
         "input-otp": "^1.4.2",
         "next": "16.1.1",
         "next-themes": "^0.4.6",
+        "pdf-lib": "^1.17.1",
+        "posthog-js": "^1.358.1",
         "radix-ui": "^1.4.3",
         "react": "^19.2.4",
         "react-day-picker": "^9.13.0",

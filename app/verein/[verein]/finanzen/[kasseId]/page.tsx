@@ -80,7 +80,7 @@ export default function KasseDetailPage() {
             setKategorie("");
             setMitgliedId(undefined);
             setBeitragsSatzId(undefined);
-        } catch (error) {
+        } catch {
             toast.error("Fehler beim Erstellen der Buchung");
         }
     };
@@ -90,7 +90,7 @@ export default function KasseDetailPage() {
             await deleteKasse({ kasseId });
             toast.success("Kasse gelöscht");
             router.push(`/verein/${vereinId}/finanzen`);
-        } catch (error) {
+        } catch {
             toast.error("Kasse konnte nicht gelöscht werden (evtl. noch Buchungen vorhanden)");
         }
     };
@@ -100,7 +100,7 @@ export default function KasseDetailPage() {
         try {
             await deleteBuchung({ buchungId: id });
             toast.success("Buchung gelöscht");
-        } catch (error) {
+        } catch {
             toast.error("Fehler beim Löschen der Buchung");
         }
     };
@@ -247,36 +247,43 @@ export default function KasseDetailPage() {
                                     <TableHead>Mitglied</TableHead>
                                     <TableHead>Beitragssatz</TableHead>
                                     <TableHead className="text-right">Betrag</TableHead>
-                                    <TableHead className="w-[50px]"></TableHead>
+                                    <TableHead className="w-[220px]"></TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {buchungen.map((buchung) => (
-                                    <TableRow key={buchung._id}>
-                                        <TableCell>{format(new Date(buchung.datum), "dd.MM.yyyy")}</TableCell>
-                                        <TableCell className="font-medium">{buchung.zweck}</TableCell>
-                                        <TableCell>{buchung.kategorie || "-"}</TableCell>
-                                        <TableCell>{buchung.belegNummer || "-"}</TableCell>
-                                        <TableCell>
-                                            {buchung.mitgliedId
-                                                ? (() => {
-                                                      const mitglied = mitglieder.find((m) => m._id === buchung.mitgliedId);
-                                                      return mitglied ? `${mitglied.vorname} ${mitglied.nachname}` : "-";
-                                                  })()
-                                                : "-"}
-                                        </TableCell>
-                                        <TableCell>{buchung.beitragsSatzId ? beitragssaetze.find((s) => s._id === buchung.beitragsSatzId)?.name || "-" : "-"}</TableCell>
-                                        <TableCell className={`text-right font-medium ${buchung.betrag < 0 ? "text-red-500" : "text-green-500"}`}>
-                                            {buchung.betrag > 0 ? "+" : ""}
-                                            {buchung.betrag.toFixed(2)} {kasse.waehrung}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button variant="ghost" size="sm" className="text-red-500" onClick={() => handleDeleteBuchung(buchung._id)}>
-                                                X
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
+                                {buchungen.map((buchung) => {
+                                    return (
+                                        <TableRow key={buchung._id}>
+                                            <TableCell>{format(new Date(buchung.datum), "dd.MM.yyyy")}</TableCell>
+                                            <TableCell className="font-medium">{buchung.zweck}</TableCell>
+                                            <TableCell>{buchung.kategorie || "-"}</TableCell>
+                                            <TableCell>{buchung.belegNummer || "-"}</TableCell>
+                                            <TableCell>
+                                                {buchung.mitgliedId
+                                                    ? (() => {
+                                                          const mitglied = mitglieder.find((m) => m._id === buchung.mitgliedId);
+                                                          return mitglied ? `${mitglied.vorname} ${mitglied.nachname}` : "-";
+                                                      })()
+                                                    : "-"}
+                                            </TableCell>
+                                            <TableCell>{buchung.beitragsSatzId ? beitragssaetze.find((s) => s._id === buchung.beitragsSatzId)?.name || "-" : "-"}</TableCell>
+                                            <TableCell className={`text-right font-medium ${buchung.betrag < 0 ? "text-red-500" : "text-green-500"}`}>
+                                                {buchung.betrag > 0 ? "+" : ""}
+                                                {buchung.betrag.toFixed(2)} {kasse.waehrung}
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <Button variant="outline" size="sm" onClick={() => router.push(`/verein/${vereinId}/finanzen/${kasseId}/rechnungen/${buchung._id}`)}>
+                                                        Rechnungen
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" className="text-red-500" onClick={() => handleDeleteBuchung(buchung._id)}>
+                                                        X
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
                                 {buchungen.length === 0 && (
                                     <TableRow>
                                         <TableCell colSpan={8} className="h-24 text-center">

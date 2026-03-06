@@ -28,13 +28,21 @@ export default function FinanzenPage() {
     const beitragssaetze = useQuery(api.beitragssatz.list, { vereinId });
 
     const createKasse = useMutation(api.finanzen.createKasse);
+    const createUmbuchung = useMutation(api.finanzen.createUmbuchung);
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isUmbuchungOpen, setIsUmbuchungOpen] = useState(false);
     const [name, setName] = useState("");
     const [typ, setTyp] = useState<"barkasse" | "bankkonto" | "kreditkarte" | "paypal" | "sonstiges">("bankkonto");
     const [anfangsbestand, setAnfangsbestand] = useState("0");
     const [waehrung, setWaehrung] = useState("EUR");
     const [aktiv, setAktiv] = useState(true);
+    const [vonKasseId, setVonKasseId] = useState<Id<"kasse"> | "">("");
+    const [zuKasseId, setZuKasseId] = useState<Id<"kasse"> | "">("");
+    const [umbuchungBetrag, setUmbuchungBetrag] = useState("");
+    const [umbuchungDatum, setUmbuchungDatum] = useState(new Date().toISOString().split("T")[0]);
+    const [umbuchungZweck, setUmbuchungZweck] = useState("");
+    const [umbuchungBelegNummer, setUmbuchungBelegNummer] = useState("");
 
     const handleCreateKasse = async () => {
         await createKasse({
@@ -48,6 +56,35 @@ export default function FinanzenPage() {
         setIsCreateOpen(false);
         setName("");
         setAnfangsbestand("0");
+    };
+
+    const handleCreateUmbuchung = async () => {
+        const parsedBetrag = parseFloat(umbuchungBetrag);
+        if (!vonKasseId || !zuKasseId) {
+            return;
+        }
+
+        if (isNaN(parsedBetrag) || parsedBetrag <= 0) {
+            return;
+        }
+
+        await createUmbuchung({
+            vereinId,
+            vonKasseId,
+            zuKasseId,
+            betrag: parsedBetrag,
+            datum: new Date(`${umbuchungDatum}T00:00:00`).toISOString(),
+            zweck: umbuchungZweck || undefined,
+            belegNummer: umbuchungBelegNummer || undefined,
+        });
+
+        setIsUmbuchungOpen(false);
+        setVonKasseId("");
+        setZuKasseId("");
+        setUmbuchungBetrag("");
+        setUmbuchungDatum(new Date().toISOString().split("T")[0]);
+        setUmbuchungZweck("");
+        setUmbuchungBelegNummer("");
     };
 
     if (kassen === undefined || totalBestand === undefined || buchungen === undefined || buchungsUebersicht === undefined || mitglieder === undefined || beitragssaetze === undefined) {
@@ -75,6 +112,74 @@ export default function FinanzenPage() {
                     <Button variant="outline" onClick={() => router.push(`/verein/${vereinId}/finanzen/beitragssaetze`)}>
                         Beitragsverwaltung
                     </Button>
+                    <Dialog open={isUmbuchungOpen} onOpenChange={setIsUmbuchungOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline">Umbuchung</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Umbuchung zwischen Kassen</DialogTitle>
+                                <DialogDescription>Verschiebe Geld von einer Kasse in eine andere.</DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="vonKasse">Von Kasse</Label>
+                                        <Select value={vonKasseId} onValueChange={(val) => setVonKasseId(val as Id<"kasse">)}>
+                                            <SelectTrigger id="vonKasse">
+                                                <SelectValue placeholder="Quelle wählen" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {kassen.map((kasse) => (
+                                                    <SelectItem key={kasse._id} value={kasse._id}>
+                                                        {kasse.name} ({kasse.waehrung})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="zuKasse">Zu Kasse</Label>
+                                        <Select value={zuKasseId} onValueChange={(val) => setZuKasseId(val as Id<"kasse">)}>
+                                            <SelectTrigger id="zuKasse">
+                                                <SelectValue placeholder="Ziel wählen" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {kassen.map((kasse) => (
+                                                    <SelectItem key={kasse._id} value={kasse._id}>
+                                                        {kasse.name} ({kasse.waehrung})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="umbuchungBetrag">Betrag</Label>
+                                        <Input id="umbuchungBetrag" type="number" step="0.01" value={umbuchungBetrag} onChange={(e) => setUmbuchungBetrag(e.target.value)} placeholder="0.00" />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="umbuchungDatum">Datum</Label>
+                                        <Input id="umbuchungDatum" type="date" value={umbuchungDatum} onChange={(e) => setUmbuchungDatum(e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="umbuchungZweck">Zweck</Label>
+                                    <Input id="umbuchungZweck" value={umbuchungZweck} onChange={(e) => setUmbuchungZweck(e.target.value)} placeholder="Optional" />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="umbuchungBelegNummer">Belegnummer</Label>
+                                    <Input id="umbuchungBelegNummer" value={umbuchungBelegNummer} onChange={(e) => setUmbuchungBelegNummer(e.target.value)} placeholder="Optional" />
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button onClick={handleCreateUmbuchung} disabled={!vonKasseId || !zuKasseId || vonKasseId === zuKasseId || !umbuchungBetrag}>
+                                    Umbuchung ausführen
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                     <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                         <DialogTrigger asChild>
                             <Button>+ Neue Kasse</Button>

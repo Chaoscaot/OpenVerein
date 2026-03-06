@@ -31,9 +31,11 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
         emailVerification: {
             autoSignInAfterVerification: true,
             sendVerificationEmail: async ({ user, url }) => {
+                const verificationUrl = new URL(url);
+                verificationUrl.searchParams.set("callbackURL", `${siteUrl}/verify-email/confirmed`);
                 await requireActionCtx(ctx).scheduler.runAfter(0, internal.sendMails.sendVerifyEmail, {
                     to: user.email,
-                    link: url,
+                    link: verificationUrl.toString(),
                 });
             },
         },
