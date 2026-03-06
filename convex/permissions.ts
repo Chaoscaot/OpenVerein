@@ -23,6 +23,15 @@ const PERMISSION_GROUPS = [
         ],
     },
     {
+        key: "kommunikation",
+        label: "Kommunikation",
+        permissions: [
+            { key: "liste.view", label: "Listen sehen" },
+            { key: "liste.manage", label: "Listen verwalten" },
+            { key: "mail.send", label: "E-Mails versenden" },
+        ],
+    },
+    {
         key: "rollen",
         label: "Rollen",
         permissions: [

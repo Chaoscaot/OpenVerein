@@ -38,3 +38,26 @@ export const MitgliedLinkEmail = ({ link, vereinName, mitgliedName }: { link: st
         <Text>Wenn du diese Einladung nicht erwartest, kannst du diese E-Mail ignorieren.</Text>
     </OpenVereinLayout>
 );
+
+export const ListenMailEmail = ({ vereinName, subject, body, listNames }: { vereinName: string; subject: string; body: string; listNames: string[] }) => {
+    const paragraphs = body
+        .split(/\n{2,}/)
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean);
+
+    return (
+        <OpenVereinLayout>
+            <Text className="text-2xl font-bold">{subject}</Text>
+            <Text>Diese Nachricht wurde über OpenVerein für den Verein {vereinName} versendet.</Text>
+            {listNames.length > 0 ? (
+                <>
+                    <Text className="font-bold">Empfängerlisten</Text>
+                    <Text>{listNames.join(", ")}</Text>
+                </>
+            ) : null}
+            {paragraphs.map((paragraph, index) => (
+                <Text key={index}>{paragraph}</Text>
+            ))}
+        </OpenVereinLayout>
+    );
+};

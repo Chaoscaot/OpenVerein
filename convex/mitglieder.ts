@@ -306,6 +306,13 @@ export const remove = mutation({
             // Note: You may want to call a file deletion function here
         }
 
+        const listenEintraege = await ctx.db
+            .query("listen_eintrag")
+            .withIndex("by_mitgliedId", (q) => q.eq("mitgliedId", id))
+            .collect();
+
+        await Promise.all(listenEintraege.map((eintrag) => ctx.db.delete(eintrag._id)));
+
         await ctx.db.delete("mitglied", id);
     },
 });

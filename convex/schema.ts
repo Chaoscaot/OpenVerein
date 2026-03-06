@@ -107,11 +107,13 @@ export default defineSchema({
     mitglieder_liste: defineTable({
         vereinId: v.id("verein"),
         name: v.string(),
-    }),
+    }).index("by_vereinId", ["vereinId"]),
     listen_eintrag: defineTable({
         listeId: v.id("mitglieder_liste"),
         mitgliedId: v.id("mitglied"),
-    }),
+    })
+        .index("by_listeId", ["listeId"])
+        .index("by_mitgliedId", ["mitgliedId"]),
     vereins_rollen: defineTable({
         vereinId: v.id("verein"),
         name: v.string(),

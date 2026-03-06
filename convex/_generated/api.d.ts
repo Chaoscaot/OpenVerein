@@ -13,6 +13,7 @@ import type * as beitragssatz from "../beitragssatz.js";
 import type * as files from "../files.js";
 import type * as finanzen from "../finanzen.js";
 import type * as http from "../http.js";
+import type * as listen from "../listen.js";
 import type * as mitglieder from "../mitglieder.js";
 import type * as permissions from "../permissions.js";
 import type * as rbac from "../rbac.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   files: typeof files;
   finanzen: typeof finanzen;
   http: typeof http;
+  listen: typeof listen;
   mitglieder: typeof mitglieder;
   permissions: typeof permissions;
   rbac: typeof rbac;
