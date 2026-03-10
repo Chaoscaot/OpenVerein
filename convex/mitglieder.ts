@@ -21,6 +21,14 @@ function createLinkToken() {
     return `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 }
 
+async function countMitgliederForVerein(ctx: MutationCtx, vereinId: Id<"verein">) {
+    const mitglieder = await ctx.db
+        .query("mitglied")
+        .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
+        .collect();
+    return mitglieder.length;
+}
+
 export const list = query({
     args: {
         vereinId: v.id("verein"),
@@ -95,6 +103,7 @@ export const create = mutation({
         phoneNote: v.optional(v.string()),
         phone2: v.optional(v.string()),
         phone2Note: v.optional(v.string()),
+        listenEmails: v.boolean(),
         beitrittsdatum: v.string(),
         ehrenmitglied: v.boolean(),
         datein: v.array(
@@ -161,6 +170,9 @@ export const create = mutation({
                 phone2: values.phone2,
                 phone2Note: values.phone2Note,
             },
+            kommunikation: {
+                listenEmails: values.listenEmails,
+            },
             beitrittsdatum: values.beitrittsdatum,
             austrittsdatum: values.austrittsdatum,
             ehrenmitglied: values.ehrenmitglied,
@@ -179,6 +191,7 @@ export const create = mutation({
 
         await ctx.db.patch("verein", values.vereinId, {
             mitgliederCounter: verein.mitgliederCounter + 1,
+            mitgliederAnzahl: await countMitgliederForVerein(ctx, values.vereinId),
         });
 
         return mitgliedId;
@@ -202,6 +215,7 @@ export const update = mutation({
         phoneNote: v.optional(v.string()),
         phone2: v.optional(v.string()),
         phone2Note: v.optional(v.string()),
+        listenEmails: v.boolean(),
         beitrittsdatum: v.string(),
         ehrenmitglied: v.boolean(),
         datein: v.array(
@@ -257,6 +271,9 @@ export const update = mutation({
                 phoneNote: values.phoneNote,
                 phone2: values.phone2,
                 phone2Note: values.phone2Note,
+            },
+            kommunikation: {
+                listenEmails: values.listenEmails,
             },
             beitrittsdatum: values.beitrittsdatum,
             austrittsdatum: values.austrittsdatum,
@@ -314,6 +331,10 @@ export const remove = mutation({
         await Promise.all(listenEintraege.map((eintrag) => ctx.db.delete(eintrag._id)));
 
         await ctx.db.delete("mitglied", id);
+
+        await ctx.db.patch("verein", mitglied.vereinId, {
+            mitgliederAnzahl: await countMitgliederForVerein(ctx, mitglied.vereinId),
+        });
     },
 });
 

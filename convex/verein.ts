@@ -1,7 +1,21 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { Doc } from "./_generated/dataModel";
+import { QueryCtx, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
 import { hasPermission, requirePermission } from "./rbac";
+
+async function resolveMitgliederAnzahl(ctx: QueryCtx, verein: Doc<"verein">) {
+    if (verein.mitgliederAnzahl !== undefined) {
+        return verein.mitgliederAnzahl;
+    }
+
+    const mitglieder = await ctx.db
+        .query("mitglied")
+        .withIndex("by_vereinId", (q) => q.eq("vereinId", verein._id))
+        .collect();
+
+    return mitglieder.length;
+}
 
 export const list = query({
     async handler(ctx) {
@@ -39,7 +53,12 @@ export const list = query({
             deduped.set(verein._id, verein);
         }
 
-        return Array.from(deduped.values());
+        return await Promise.all(
+            Array.from(deduped.values()).map(async (verein) => ({
+                ...verein,
+                mitgliederAnzahl: await resolveMitgliederAnzahl(ctx, verein),
+            })),
+        );
     },
 });
 
@@ -87,6 +106,7 @@ export const create = mutation({
                 country,
             },
             mitgliederCounter: 1,
+            mitgliederAnzahl: 0,
         });
         return vereinId;
     },
@@ -98,7 +118,10 @@ export const get = query({
     },
     async handler(ctx, { id }) {
         const access = await requirePermission(ctx, id, "verein.view");
-        return access.verein;
+        return {
+            ...access.verein,
+            mitgliederAnzahl: await resolveMitgliederAnzahl(ctx, access.verein),
+        };
     },
 });
 

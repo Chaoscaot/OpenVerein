@@ -9,13 +9,17 @@ import { authClient } from "@/lib/auth-client";
 import { Button } from "./ui/button";
 import { useRouter } from "next/navigation";
 import type { User } from "better-auth";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./ui/sidebar";
+import { SidebarMenu, SidebarMenuButton } from "./ui/sidebar";
+import Link from "next/link";
+import { useStoredImageUrl } from "@/hooks/use-stored-image-url";
 
 function User({ user }: { user: User }) {
+    const imageUrl = useStoredImageUrl(user.image);
+
     return (
         <>
             <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.image ?? ""} alt={user.name} />
+                <AvatarImage src={imageUrl} alt={user.name} />
                 <AvatarFallback className="rounded-lg">CN</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
@@ -41,6 +45,7 @@ function InternalUserComponent({ dropdown, sidebar = false }: { dropdown?: React
     const isMobile = useIsMobile();
     const router = useRouter();
     const { data } = authClient.useSession();
+    const imageUrl = useStoredImageUrl(data?.user.image);
 
     if (!data) {
         return null;
@@ -65,7 +70,7 @@ function InternalUserComponent({ dropdown, sidebar = false }: { dropdown?: React
                 <DropdownMenuLabel className="p-0 font-normal">
                     <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                         <Avatar className="h-8 w-8 rounded-lg">
-                            <AvatarImage src={user.image ?? ""} alt={user.name} />
+                            <AvatarImage src={imageUrl} alt={user.name} />
                             <AvatarFallback className="rounded-lg">CN</AvatarFallback>
                         </Avatar>
                         <div className="grid flex-1 text-left text-sm leading-tight">
@@ -83,9 +88,11 @@ function InternalUserComponent({ dropdown, sidebar = false }: { dropdown?: React
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                    <DropdownMenuItem>
-                        <HugeiconsIcon icon={BadgeCheck} className="size-4" />
-                        Konto
+                    <DropdownMenuItem asChild>
+                        <Link href="/konto">
+                            <HugeiconsIcon icon={BadgeCheck} className="size-4" />
+                            Konto
+                        </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem>
                         <HugeiconsIcon icon={CreditCard} className="size-4" />

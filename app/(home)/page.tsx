@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Users, FileText, CreditCard, BarChart, Shield, Mail } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { isAuthenticated } from "@/lib/auth-server";
 
 const features = [
     {
@@ -36,7 +37,19 @@ const features = [
     },
 ];
 
-export default function Home() {
+export default async function Home() {
+    const authenticated = await isAuthenticated();
+
+    const primaryHref = authenticated ? "/verein" : "/signup";
+    const primaryLabel = authenticated ? "Zu deinen Vereinen" : "Jetzt kostenlos starten";
+    const secondaryHref = authenticated ? "/konto" : "/login";
+    const secondaryLabel = authenticated ? "Konto öffnen" : "Anmelden";
+    const ctaHref = authenticated ? "/verein" : "/signup";
+    const ctaText = authenticated
+        ? "Spring direkt zurück in deine Vereinsverwaltung und arbeite dort weiter, wo du zuletzt aufgehört hast."
+        : "Registriere deinen Verein in wenigen Minuten und erlebe, wie einfach moderne Vereinsverwaltung sein kann.";
+    const ctaLabel = authenticated ? "Vereine öffnen" : "Kostenlos registrieren";
+
     return (
         <div className="flex flex-col min-h-screen">
             {/* Hero */}
@@ -62,14 +75,14 @@ export default function Home() {
                     </p>
 
                     <div className="flex flex-wrap gap-3 justify-center">
-                        <Link href="/signup">
+                        <Link href={primaryHref}>
                             <Button size="lg" className="px-8">
-                                Jetzt kostenlos starten
+                                {primaryLabel}
                             </Button>
                         </Link>
-                        <Link href="/login">
+                        <Link href={secondaryHref}>
                             <Button size="lg" variant="outline" className="px-8">
-                                Anmelden
+                                {secondaryLabel}
                             </Button>
                         </Link>
                     </div>
@@ -107,10 +120,10 @@ export default function Home() {
             <section className="py-20 px-6">
                 <div className="max-w-3xl mx-auto rounded-2xl bg-primary/10 border border-primary/20 flex flex-col items-center text-center gap-5 py-16 px-8">
                     <h2 className="text-3xl font-bold tracking-tight">Bereit loszulegen?</h2>
-                    <p className="text-muted-foreground max-w-md">Registriere deinen Verein in wenigen Minuten und erlebe, wie einfach moderne Vereinsverwaltung sein kann.</p>
-                    <Link href="/signup">
+                    <p className="text-muted-foreground max-w-md">{ctaText}</p>
+                    <Link href={ctaHref}>
                         <Button size="lg" className="px-10">
-                            Kostenlos registrieren
+                            {ctaLabel}
                         </Button>
                     </Link>
                 </div>

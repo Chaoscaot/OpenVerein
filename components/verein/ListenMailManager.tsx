@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { useUploadFile } from "@convex-dev/r2/react";
@@ -21,6 +21,35 @@ type Attachment = {
     mimeType?: string;
     size: number;
 };
+
+function formatDateTime(value: string) {
+    return new Intl.DateTimeFormat("de-DE", {
+        dateStyle: "medium",
+        timeStyle: "short",
+    }).format(new Date(value));
+}
+
+function getMailStatusVariant(status: "queued" | "sent" | "failed") {
+    switch (status) {
+        case "sent":
+            return "secondary" as const;
+        case "failed":
+            return "destructive" as const;
+        default:
+            return "outline" as const;
+    }
+}
+
+function getMailStatusLabel(status: "queued" | "sent" | "failed") {
+    switch (status) {
+        case "sent":
+            return "Versendet";
+        case "failed":
+            return "Fehlgeschlagen";
+        default:
+            return "In Warteschlange";
+    }
+}
 
 function formatFileSize(size: number) {
     if (size < 1024) {
@@ -326,6 +355,7 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
     const { acl, canRead, canSend } = useCommunicationPermissions(vereinId);
 
     const overview = useQuery(api.listen.overview, canRead ? { vereinId } : "skip");
+    const history = useQuery(api.listen.history, canRead ? { vereinId, limit: 10 } : "skip");
     const sendMail = useMutation(api.listen.sendMail);
     const deleteFile = useMutation(api.files.deleteFile);
     const uploadFile = useUploadFile(api.files);
@@ -337,16 +367,16 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    const preview = useQuery(api.listen.previewRecipients, canSend ? { vereinId, listKeys: selectedListKeys } : "skip");
-
-    useEffect(() => {
+    const validSelectedListKeys = useMemo(() => {
         if (!overview) {
-            return;
+            return selectedListKeys;
         }
 
         const validKeys = new Set(overview.map((list) => list.key));
-        setSelectedListKeys((current) => current.filter((key) => validKeys.has(key)));
-    }, [overview]);
+        return selectedListKeys.filter((key) => validKeys.has(key));
+    }, [overview, selectedListKeys]);
+
+    const preview = useQuery(api.listen.previewRecipients, canSend ? { vereinId, listKeys: validSelectedListKeys } : "skip");
 
     const handleAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files ?? []);
@@ -402,7 +432,7 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
             return;
         }
 
-        if (selectedListKeys.length === 0) {
+        if (validSelectedListKeys.length === 0) {
             toast.error("Bitte wähle mindestens eine Liste aus");
             return;
         }
@@ -420,7 +450,7 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
         try {
             const result = await sendMail({
                 vereinId,
-                listKeys: selectedListKeys,
+                listKeys: validSelectedListKeys,
                 subject,
                 body,
                 attachments,
@@ -465,7 +495,7 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
                     <>
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                             {(overview ?? []).map((list) => {
-                                const checked = selectedListKeys.includes(list.key);
+                                const checked = validSelectedListKeys.includes(list.key);
                                 return (
                                     <label key={list.key} className="rounded-lg border p-4 flex items-start gap-3 cursor-pointer">
                                         <Checkbox checked={checked} onCheckedChange={(value) => toggleListSelection(list.key, Boolean(value))} />
@@ -526,14 +556,18 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
                             <div className="flex items-center justify-between gap-3">
                                 <div>
                                     <p className="font-medium">Empfängervorschau</p>
-                                    <p className="text-sm text-muted-foreground">Doppelte E-Mail-Adressen werden automatisch entfernt.</p>
+                                    <p className="text-sm text-muted-foreground">Doppelte E-Mail-Adressen werden automatisch entfernt. Abgemeldete Empfänger werden übersprungen.</p>
                                 </div>
-                                <Badge variant="secondary">{preview?.recipientCount ?? 0} Empfänger</Badge>
+                                <div className="flex items-center gap-2">
+                                    {preview?.blockedCount ? <Badge variant="outline">{preview.blockedCount} abgemeldet</Badge> : null}
+                                    <Badge variant="secondary">{preview?.recipientCount ?? 0} Empfänger</Badge>
+                                </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {(preview?.listSummaries ?? []).map((summary) => (
                                     <Badge key={summary.key} variant="outline">
                                         {summary.name}: {summary.recipientCount}
+                                        {summary.blockedCount > 0 ? ` · ${summary.blockedCount} abgemeldet` : ""}
                                     </Badge>
                                 ))}
                             </div>
@@ -549,6 +583,58 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
 
                         <div className="flex justify-end">
                             <Button onClick={handleSendMail}>Mailversand starten</Button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="font-medium">Mail-Historie</p>
+                                    <p className="text-sm text-muted-foreground">Die letzten Versandaufträge mit Status und Versanddetails.</p>
+                                </div>
+                                <Badge variant="outline">{history?.length ?? 0} Einträge</Badge>
+                            </div>
+
+                            <div className="space-y-3">
+                                {(history ?? []).length === 0 ? (
+                                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Noch keine Versandhistorie vorhanden.</div>
+                                ) : (
+                                    (history ?? []).map((entry) => (
+                                        <div key={entry._id} className="rounded-lg border p-4 space-y-3">
+                                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                                <div className="space-y-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="font-medium">{entry.subject}</p>
+                                                        <Badge variant={getMailStatusVariant(entry.status)}>{getMailStatusLabel(entry.status)}</Badge>
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground">Erstellt am {formatDateTime(entry.createdAt)}</p>
+                                                    {entry.completedAt ? <p className="text-sm text-muted-foreground">Abgeschlossen am {formatDateTime(entry.completedAt)}</p> : null}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <Badge variant="outline">{entry.recipientCount} Empfänger</Badge>
+                                                    <Badge variant="outline">{entry.sentMessages ?? 0} Nachrichten</Badge>
+                                                    <Badge variant="outline">{entry.attachments.length} Anhänge</Badge>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-2">
+                                                {entry.listNames.map((name) => (
+                                                    <Badge key={`${entry._id}-${name}`} variant="secondary">
+                                                        {name}
+                                                    </Badge>
+                                                ))}
+                                            </div>
+
+                                            <div className="space-y-1 text-sm text-muted-foreground">
+                                                {entry.requestedByEmail ? <p>Angefordert von: {entry.requestedByEmail}</p> : null}
+                                                <p>Antwortadresse: {entry.replyTo}</p>
+                                                {entry.lastError ? <p className="text-destructive">Fehler: {entry.lastError}</p> : null}
+                                            </div>
+
+                                            <div className="rounded-md bg-muted/40 p-3 text-sm whitespace-pre-wrap">{entry.body}</div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
                     </>
                 )}

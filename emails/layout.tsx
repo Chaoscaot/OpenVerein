@@ -1,6 +1,6 @@
 import { Body, Button, Container, Head, Hr, Html, Img, Preview, Section, Tailwind, Text } from "@react-email/components";
 
-const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://open-verein.vercel.app";
+const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://openverein.eu";
 
 export const OpenVereinLayout = ({ children }: { children: React.ReactNode }) => (
     <Html>

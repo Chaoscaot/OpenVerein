@@ -24,6 +24,7 @@ export default defineSchema({
             }),
         ),
         mitgliederCounter: v.number(),
+        mitgliederAnzahl: v.optional(v.number()),
     })
         .index("by_name", ["name"])
         .index("by_owner", ["owner"]),
@@ -51,6 +52,11 @@ export default defineSchema({
             phone2: v.optional(v.string()),
             phone2Note: v.optional(v.string()),
         }),
+        kommunikation: v.optional(
+            v.object({
+                listenEmails: v.boolean(),
+            }),
+        ),
         beitrittsdatum: v.string(),
         austrittsdatum: v.optional(v.string()),
         ehrenmitglied: v.boolean(),
@@ -114,6 +120,33 @@ export default defineSchema({
     })
         .index("by_listeId", ["listeId"])
         .index("by_mitgliedId", ["mitgliedId"]),
+    mail_versand: defineTable({
+        vereinId: v.id("verein"),
+        subject: v.string(),
+        body: v.string(),
+        listKeys: v.array(v.string()),
+        listNames: v.array(v.string()),
+        recipientCount: v.number(),
+        requestedByUserId: v.optional(v.string()),
+        requestedByEmail: v.optional(v.string()),
+        toEmail: v.string(),
+        replyTo: v.string(),
+        attachments: v.array(
+            v.object({
+                name: v.string(),
+                mimeType: v.optional(v.string()),
+                size: v.number(),
+            }),
+        ),
+        status: v.union(v.literal("queued"), v.literal("sent"), v.literal("failed")),
+        sentMessages: v.optional(v.number()),
+        providerMessageIds: v.optional(v.array(v.string())),
+        lastError: v.optional(v.string()),
+        createdAt: v.string(),
+        completedAt: v.optional(v.string()),
+    })
+        .index("by_vereinId_createdAt", ["vereinId", "createdAt"])
+        .index("by_vereinId_status", ["vereinId", "status"]),
     vereins_rollen: defineTable({
         vereinId: v.id("verein"),
         name: v.string(),

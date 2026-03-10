@@ -26,8 +26,10 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({
     children,
+    modal,
 }: Readonly<{
     children: React.ReactNode;
+    modal: React.ReactNode;
 }>) {
     const token = await getToken();
     return (
@@ -36,6 +38,7 @@ export default async function RootLayout({
                 <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
                     <ThemeProvider enableSystem attribute="class" defaultTheme="system">
                         {children}
+                        {modal}
                         <Toaster />
                     </ThemeProvider>
                     <Analytics />

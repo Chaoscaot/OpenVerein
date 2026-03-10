@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { MutationCtx, QueryCtx, mutation, query } from "./_generated/server";
+import { MutationCtx, QueryCtx, internalMutation, mutation, query } from "./_generated/server";
 import { getVereinAccess, Permission } from "./rbac";
 
 const SYSTEM_LISTS = [
@@ -58,6 +58,10 @@ function lower(value: string) {
     return trimAndNormalize(value).toLowerCase();
 }
 
+function nowIso() {
+    return new Date().toISOString();
+}
+
 function toMitgliedSummary(mitglied: Doc<"mitglied">): MitgliedSummary {
     return {
         _id: mitglied._id,
@@ -74,6 +78,10 @@ function isAktivesMitglied(mitglied: Doc<"mitglied">) {
 
 function isEhemalig(mitglied: Doc<"mitglied">) {
     return mitglied.typ === "ausgeschieden" || Boolean(mitglied.austrittsdatum);
+}
+
+function allowsListenEmails(mitglied: Doc<"mitglied">) {
+    return mitglied.kommunikation?.listenEmails !== false;
 }
 
 function uniqueMemberIds(memberIds: readonly Id<"mitglied">[]) {
@@ -423,21 +431,30 @@ export const previewRecipients = query({
                 listSummaries: [],
                 recipients: [],
                 recipientCount: 0,
+                blockedCount: 0,
             };
         }
 
         const recipientsByEmail = new Map<string, MitgliedSummary>();
-        const listSummaries = [] as { key: string; name: string; recipientCount: number }[];
+        const blockedEmails = new Set<string>();
+        const listSummaries = [] as { key: string; name: string; recipientCount: number; blockedCount: number }[];
 
         for (const listKey of uniqueListKeys) {
             const { name, members } = await resolveMembersForListKey(ctx, vereinId, listKey);
-            const sendableMembers = members.filter((mitglied) => trimAndNormalize(mitglied.kontakt.email).length > 0);
+            const membersWithEmail = members.filter((mitglied) => trimAndNormalize(mitglied.kontakt.email).length > 0);
+            const sendableMembers = membersWithEmail.filter((mitglied) => allowsListenEmails(mitglied));
+            const blockedMembers = membersWithEmail.filter((mitglied) => !allowsListenEmails(mitglied));
 
             listSummaries.push({
                 key: listKey,
                 name,
                 recipientCount: sendableMembers.length,
+                blockedCount: blockedMembers.length,
             });
+
+            for (const member of blockedMembers) {
+                blockedEmails.add(member.kontakt.email.trim().toLowerCase());
+            }
 
             for (const member of sendableMembers) {
                 const email = member.kontakt.email.trim().toLowerCase();
@@ -453,6 +470,7 @@ export const previewRecipients = query({
             listSummaries,
             recipients,
             recipientCount: recipients.length,
+            blockedCount: blockedEmails.size,
         };
     },
 });
@@ -498,6 +516,10 @@ export const sendMail = mutation({
             const { name, members } = await resolveMembersForListKey(ctx, vereinId, listKey);
             listNames.push(name);
             for (const member of members) {
+                if (!allowsListenEmails(member)) {
+                    continue;
+                }
+
                 const email = member.kontakt.email.trim().toLowerCase();
                 if (email) {
                     recipients.set(email, member.kontakt.email.trim());
@@ -507,7 +529,7 @@ export const sendMail = mutation({
 
         const recipientEmails = Array.from(recipients.values());
         if (recipientEmails.length === 0) {
-            throw new Error("Keine Empfänger mit E-Mail-Adresse gefunden");
+            throw new Error("Keine empfangsbereiten Empfänger mit E-Mail-Adresse gefunden");
         }
 
         const totalAttachmentSize = attachments.reduce((sum, attachment) => sum + attachment.size, 0);
@@ -516,6 +538,27 @@ export const sendMail = mutation({
             throw new Error("Die Anhänge sind zusammen zu groß. Bitte bleibe unter 25 MB.");
         }
 
+        const requestedByEmail = typeof user?.email === "string" ? user.email : undefined;
+        const mailHistoryId = await ctx.db.insert("mail_versand", {
+            vereinId,
+            subject: normalizedSubject,
+            body: normalizedBody,
+            listKeys: uniqueListKeys,
+            listNames,
+            recipientCount: recipientEmails.length,
+            requestedByUserId: typeof user?.subject === "string" ? user.subject : undefined,
+            requestedByEmail,
+            toEmail: access.verein.contact.email,
+            replyTo: access.verein.contact.email,
+            attachments: attachments.map(({ name, mimeType, size }) => ({
+                name,
+                mimeType,
+                size,
+            })),
+            status: "queued",
+            createdAt: nowIso(),
+        });
+
         await ctx.scheduler.runAfter(0, internal.sendMails.sendListenEmail, {
             vereinId,
             vereinName: access.verein.name,
@@ -523,14 +566,90 @@ export const sendMail = mutation({
             body: normalizedBody,
             toEmail: access.verein.contact.email,
             replyTo: access.verein.contact.email,
-            requestedByEmail: typeof user?.email === "string" ? user.email : undefined,
+            requestedByEmail,
             recipientEmails,
             listNames,
             attachments,
+            mailHistoryId,
         });
 
         return {
             recipientCount: recipientEmails.length,
+            mailHistoryId,
         };
+    },
+});
+
+export const history = query({
+    args: {
+        vereinId: v.id("verein"),
+        limit: v.optional(v.number()),
+    },
+    handler: async (ctx, { vereinId, limit }) => {
+        await requireAnyPermission(ctx, vereinId, [...LIST_READ_PERMISSIONS, ...MAIL_SEND_PERMISSIONS]);
+
+        const safeLimit = Math.max(1, Math.min(limit ?? 10, 50));
+
+        return await ctx.db
+            .query("mail_versand")
+            .withIndex("by_vereinId_createdAt", (q) => q.eq("vereinId", vereinId))
+            .order("desc")
+            .take(safeLimit);
+    },
+});
+
+export const markMailHistorySent = internalMutation({
+    args: {
+        mailHistoryId: v.id("mail_versand"),
+        sentMessages: v.number(),
+        providerMessageIds: v.array(v.string()),
+    },
+    handler: async (ctx, { mailHistoryId, sentMessages, providerMessageIds }) => {
+        const existing = await ctx.db.get(mailHistoryId);
+        if (!existing) {
+            return null;
+        }
+
+        await ctx.db.patch(mailHistoryId, {
+            status: "sent",
+            sentMessages,
+            providerMessageIds,
+            completedAt: nowIso(),
+        });
+
+        return mailHistoryId;
+    },
+});
+
+export const markMailHistoryFailed = internalMutation({
+    args: {
+        mailHistoryId: v.id("mail_versand"),
+        errorMessage: v.string(),
+        sentMessages: v.optional(v.number()),
+        providerMessageIds: v.optional(v.array(v.string())),
+    },
+    handler: async (ctx, { mailHistoryId, errorMessage, sentMessages, providerMessageIds }) => {
+        const existing = await ctx.db.get(mailHistoryId);
+        if (!existing) {
+            return null;
+        }
+
+        const patch: Partial<Doc<"mail_versand">> = {
+            status: "failed",
+            lastError: errorMessage,
+            completedAt: nowIso(),
+        };
+
+        if (typeof sentMessages === "number") {
+            patch.sentMessages = sentMessages;
+        }
+
+        if (providerMessageIds) {
+            patch.providerMessageIds = providerMessageIds;
+        }
+
+        await ctx.db.patch(mailHistoryId, patch);
+
+        return mailHistoryId;
     },
 });

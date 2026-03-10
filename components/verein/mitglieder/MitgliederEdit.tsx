@@ -47,6 +47,7 @@ const formSchema = z
         phoneNote: z.string().optional(),
         phone2: z.string().optional(),
         phone2Note: z.string().optional(),
+        listenEmails: z.boolean(),
         beitrittsdatum: z.date(),
         austrittsdatum: z.date().optional(),
         parent: z.string().optional(),
@@ -114,6 +115,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
             phoneNote: mitglied?.kontakt?.phoneNote,
             phone2: mitglied?.kontakt?.phone2,
             phone2Note: mitglied?.kontakt?.phone2Note,
+            listenEmails: mitglied?.kommunikation?.listenEmails ?? true,
             sepaIban: mitglied?.sepaMandat?.iban,
             sepaBic: mitglied?.sepaMandat?.bic,
             sepaMandatErstelltAm: mitglied?.sepaMandat?.erstelltAm ? new Date(mitglied.sepaMandat.erstelltAm) : undefined,
@@ -147,6 +149,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     phoneNote: values.value.phoneNote,
                     phone2: values.value.phone2,
                     phone2Note: values.value.phone2Note,
+                    listenEmails: values.value.listenEmails,
                     beitragsEinzug: values.value.beitragsEinzug,
                     geburtsdatum: values.value.geburtsdatum ? values.value.geburtsdatum.toISOString().split("T")[0] : undefined,
                     austrittsdatum: values.value.austrittsdatum ? values.value.austrittsdatum.toISOString().split("T")[0] : undefined,
@@ -187,6 +190,7 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                     phoneNote: values.value.phoneNote,
                     phone2: values.value.phone2,
                     phone2Note: values.value.phone2Note,
+                    listenEmails: values.value.listenEmails,
                     beitragsEinzug: values.value.beitragsEinzug,
                     geburtsdatum: values.value.geburtsdatum ? values.value.geburtsdatum.toISOString().split("T")[0] : undefined,
                     austrittsdatum: values.value.austrittsdatum ? values.value.austrittsdatum.toISOString().split("T")[0] : undefined,
@@ -660,6 +664,22 @@ export function MitgliederEdit({ verein, mitglied }: { verein: Doc<"verein">; mi
                                         aria-invalid={isInvalid}
                                         autoComplete="off"
                                     />
+                                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                                </Field>
+                            );
+                        }}
+                    />
+                    <form.Field
+                        name="listenEmails"
+                        children={(field) => {
+                            const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                            return (
+                                <Field data-invalid={isInvalid} orientation="responsive">
+                                    <div className="space-y-1">
+                                        <FieldLabel htmlFor={field.name}>Vereins-Rundmails erhalten</FieldLabel>
+                                        <p className="text-sm text-muted-foreground">Wenn deaktiviert, wird die Person bei Listenmails automatisch übersprungen.</p>
+                                    </div>
+                                    <Switch id={field.name} checked={field.state.value} onCheckedChange={(value) => field.handleChange(value)} aria-invalid={isInvalid} />
                                     {isInvalid && <FieldError errors={field.state.meta.errors} />}
                                 </Field>
                             );
