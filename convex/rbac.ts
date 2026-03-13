@@ -12,6 +12,7 @@ export const ALL_PERMISSIONS = [
     "liste.view",
     "liste.manage",
     "mail.send",
+    "aufgaben.viewAll",
     "rolle.view",
     "rolle.manage",
     "rolle.assign",

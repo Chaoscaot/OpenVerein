@@ -34,7 +34,6 @@ export async function AppSidebar({ id }: { id: string }) {
     const canMitgliederSection = permissionSet.has("mitglied.view") || permissionSet.has("mitglied.create");
     const canMitgliederList = permissionSet.has("mitglied.view");
     const canMitgliederCreate = permissionSet.has("mitglied.create");
-    const canCommunication = permissionSet.has("liste.view") || permissionSet.has("liste.manage") || permissionSet.has("mail.send");
     const canListenManagement = permissionSet.has("liste.view") || permissionSet.has("liste.manage") || permissionSet.has("mitglied.view");
     const canMailVersand = permissionSet.has("mail.send");
     const canFinanzenSection =
@@ -89,15 +88,6 @@ export async function AppSidebar({ id }: { id: string }) {
                                                     <SidebarMenuSubButton asChild>
                                                         <Link href={`/verein/${id}/mitglieder/neu`}>
                                                             <span>Person Anlegen</span>
-                                                        </Link>
-                                                    </SidebarMenuSubButton>
-                                                </SidebarMenuSubItem>
-                                            )}
-                                            {canCommunication && (
-                                                <SidebarMenuSubItem>
-                                                    <SidebarMenuSubButton asChild>
-                                                        <Link href={`/verein/${id}/listen`}>
-                                                            <span>Kommunikation</span>
                                                         </Link>
                                                     </SidebarMenuSubButton>
                                                 </SidebarMenuSubItem>

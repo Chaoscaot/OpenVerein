@@ -32,6 +32,11 @@ const PERMISSION_GROUPS = [
         ],
     },
     {
+        key: "aufgaben",
+        label: "Aufgaben",
+        permissions: [{ key: "aufgaben.viewAll", label: "Alle Aufgabenlisten sehen" }],
+    },
+    {
         key: "rollen",
         label: "Rollen",
         permissions: [

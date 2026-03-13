@@ -7,10 +7,12 @@ import { useUploadFile } from "@convex-dev/r2/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MarkdownContent } from "@/components/ui/markdown";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -29,6 +31,14 @@ type RecipientTargetOption = {
     kind: "list" | "role" | "member";
     recipientCount: number;
     blockedCount: number;
+};
+
+type AvailableMember = {
+    _id: Id<"mitglied">;
+    vorname: string;
+    nachname: string;
+    email: string;
+    typ: "bewerber" | "mitglied" | "fördermitglied" | "kontakt" | "ausgeschieden";
 };
 
 function formatDateTime(value: string) {
@@ -89,6 +99,21 @@ function getRecipientTargetBadgeVariant(kind: RecipientTargetOption["kind"]) {
             return "default" as const;
         default:
             return "secondary" as const;
+    }
+}
+
+function getMemberTypeLabel(typ: AvailableMember["typ"]) {
+    switch (typ) {
+        case "bewerber":
+            return "Bewerber";
+        case "fördermitglied":
+            return "Fördermitglied";
+        case "kontakt":
+            return "Kontakt";
+        case "ausgeschieden":
+            return "Ehemalig";
+        default:
+            return "Mitglied";
     }
 }
 
@@ -277,6 +302,82 @@ function RecipientTargetInput({ options, selectedKeys, onChange }: { options: Re
     );
 }
 
+function ListMemberPicker({
+    availableMembers,
+    selectedMemberIds,
+    onAddMember,
+}: {
+    availableMembers: AvailableMember[];
+    selectedMemberIds: Id<"mitglied">[];
+    onAddMember: (memberId: Id<"mitglied">) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+
+    const filteredMembers = useMemo(() => {
+        const selectedIds = new Set(selectedMemberIds);
+        const normalizedSearch = search.trim().toLowerCase();
+
+        return availableMembers.filter((mitglied) => {
+            if (selectedIds.has(mitglied._id)) {
+                return false;
+            }
+
+            if (!normalizedSearch) {
+                return true;
+            }
+
+            return `${mitglied.vorname} ${mitglied.nachname} ${mitglied.email} ${getMemberTypeLabel(mitglied.typ)}`.toLowerCase().includes(normalizedSearch);
+        });
+    }, [availableMembers, search, selectedMemberIds]);
+
+    return (
+        <div className="grid gap-2">
+            <Label>Benutzer hinzufügen</Label>
+            <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" className="justify-start" disabled={filteredMembers.length === 0 && availableMembers.length === selectedMemberIds.length}>
+                        Benutzer auswählen
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[26rem] p-0" align="start">
+                    <Command shouldFilter={false}>
+                        <CommandInput placeholder="Name, E-Mail oder Typ suchen..." value={search} onValueChange={setSearch} />
+                        <CommandList>
+                            <CommandEmpty>Keine passenden Personen gefunden.</CommandEmpty>
+                            <CommandGroup heading="Personen">
+                                {filteredMembers.map((mitglied) => (
+                                    <CommandItem
+                                        key={mitglied._id}
+                                        value={`${mitglied.vorname} ${mitglied.nachname} ${mitglied.email}`}
+                                        onSelect={() => {
+                                            onAddMember(mitglied._id);
+                                            setSearch("");
+                                        }}
+                                    >
+                                        <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="truncate font-medium">
+                                                    {mitglied.vorname} {mitglied.nachname}
+                                                </p>
+                                                <p className="truncate text-xs text-muted-foreground">{mitglied.email || "Keine E-Mail"}</p>
+                                            </div>
+                                            <Badge variant="outline" className="shrink-0">
+                                                {getMemberTypeLabel(mitglied.typ)}
+                                            </Badge>
+                                        </div>
+                                    </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        </CommandList>
+                    </Command>
+                </PopoverContent>
+            </Popover>
+            <p className="text-sm text-muted-foreground">Lege die Liste zuerst an und ergänze anschließend Personen über die Suche.</p>
+        </div>
+    );
+}
+
 export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
     const { acl, canRead, canManage } = useCommunicationPermissions(vereinId);
 
@@ -288,27 +389,14 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
     const updateList = useMutation(api.listen.update);
     const removeList = useMutation(api.listen.remove);
 
-    const [dialogOpen, setDialogOpen] = useState(false);
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [manageDialogOpen, setManageDialogOpen] = useState(false);
     const [editListId, setEditListId] = useState<Id<"mitglieder_liste"> | null>(null);
     const [listName, setListName] = useState("");
     const [selectedMemberIds, setSelectedMemberIds] = useState<Id<"mitglied">[]>([]);
-    const [memberSearch, setMemberSearch] = useState("");
 
     const systemLists = useMemo(() => overview?.filter((list) => list.kind === "system") ?? [], [overview]);
     const customListItems = useMemo(() => customLists ?? [], [customLists]);
-
-    const filteredMembers = useMemo(() => {
-        if (!availableMembers) {
-            return [];
-        }
-
-        const term = memberSearch.trim().toLowerCase();
-        if (!term) {
-            return availableMembers;
-        }
-
-        return availableMembers.filter((mitglied) => `${mitglied.vorname} ${mitglied.nachname} ${mitglied.email}`.toLowerCase().includes(term));
-    }, [availableMembers, memberSearch]);
 
     const selectedMembers = useMemo(() => {
         if (!availableMembers) {
@@ -319,12 +407,15 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
         return availableMembers.filter((mitglied) => ids.has(mitglied._id));
     }, [availableMembers, selectedMemberIds]);
 
-    const startCreate = () => {
+    const resetManageState = () => {
         setEditListId(null);
         setListName("");
         setSelectedMemberIds([]);
-        setMemberSearch("");
-        setDialogOpen(true);
+    };
+
+    const startCreate = () => {
+        setListName("");
+        setCreateDialogOpen(true);
     };
 
     const startEdit = (listId: Id<"mitglieder_liste">) => {
@@ -336,20 +427,24 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
         setEditListId(existing._id);
         setListName(existing.name);
         setSelectedMemberIds(existing.memberIds);
-        setMemberSearch("");
-        setDialogOpen(true);
+        setManageDialogOpen(true);
     };
 
-    const toggleMember = (memberId: Id<"mitglied">, checked: boolean) => {
+    const addMember = (memberId: Id<"mitglied">) => {
         setSelectedMemberIds((current) => {
-            if (checked) {
-                return Array.from(new Set([...current, memberId]));
+            if (current.includes(memberId)) {
+                return current;
             }
-            return current.filter((id) => id !== memberId);
+
+            return [...current, memberId];
         });
     };
 
-    const handleSaveList = async () => {
+    const removeMember = (memberId: Id<"mitglied">) => {
+        setSelectedMemberIds((current) => current.filter((id) => id !== memberId));
+    };
+
+    const handleCreateList = async () => {
         const trimmedName = listName.trim();
         if (!trimmedName) {
             toast.error("Bitte gib einen Listennamen ein");
@@ -357,22 +452,38 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
         }
 
         try {
-            if (editListId) {
-                await updateList({
-                    listeId: editListId,
-                    name: trimmedName,
-                    memberIds: selectedMemberIds,
-                });
-                toast.success("Liste aktualisiert");
-            } else {
-                await createList({
-                    vereinId,
-                    name: trimmedName,
-                    memberIds: selectedMemberIds,
-                });
-                toast.success("Liste erstellt");
-            }
-            setDialogOpen(false);
+            const listeId = await createList({
+                vereinId,
+                name: trimmedName,
+                memberIds: [],
+            });
+
+            toast.success("Liste erstellt. Jetzt kannst du Benutzer hinzufügen.");
+            setCreateDialogOpen(false);
+            setEditListId(listeId);
+            setSelectedMemberIds([]);
+            setManageDialogOpen(true);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Liste konnte nicht erstellt werden");
+        }
+    };
+
+    const handleSaveListMembers = async () => {
+        const trimmedName = listName.trim();
+        if (!trimmedName || !editListId) {
+            toast.error("Liste konnte nicht gespeichert werden");
+            return;
+        }
+
+        try {
+            await updateList({
+                listeId: editListId,
+                name: trimmedName,
+                memberIds: selectedMemberIds,
+            });
+            toast.success("Liste aktualisiert");
+            setManageDialogOpen(false);
+            resetManageState();
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Liste konnte nicht gespeichert werden");
         }
@@ -427,17 +538,25 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                     <div>
                         <CardTitle>Benutzerdefinierte Listen</CardTitle>
-                        <CardDescription>Erstelle eigene Verteiler und wähle Mitglieder oder Kontakte frei aus.</CardDescription>
+                        <CardDescription>Lege erst die Liste an und ergänze danach Personen über die Benutzerauswahl.</CardDescription>
                     </div>
                     {canManage && (
-                        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                        <Dialog
+                            open={createDialogOpen}
+                            onOpenChange={(open) => {
+                                setCreateDialogOpen(open);
+                                if (!open) {
+                                    setListName("");
+                                }
+                            }}
+                        >
                             <DialogTrigger asChild>
                                 <Button onClick={startCreate}>Liste erstellen</Button>
                             </DialogTrigger>
-                            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+                            <DialogContent className="max-w-lg">
                                 <DialogHeader>
-                                    <DialogTitle>{editListId ? "Liste bearbeiten" : "Neue Liste"}</DialogTitle>
-                                    <DialogDescription>Wähle die Personen aus, die Teil dieser Liste sein sollen.</DialogDescription>
+                                    <DialogTitle>Neue Liste</DialogTitle>
+                                    <DialogDescription>Erstelle zuerst die Liste. Benutzer ergänzt du anschließend über die Benutzerauswahl.</DialogDescription>
                                 </DialogHeader>
 
                                 <div className="grid gap-4 py-2">
@@ -445,49 +564,14 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
                                         <Label htmlFor="listen-name">Name</Label>
                                         <Input id="listen-name" value={listName} onChange={(event) => setListName(event.target.value)} placeholder="z.B. Presseverteiler" />
                                     </div>
-
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="listen-mitglieder-suche">Personen suchen</Label>
-                                        <Input id="listen-mitglieder-suche" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Name oder E-Mail durchsuchen" />
-                                    </div>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        {selectedMembers.length === 0 ? (
-                                            <span className="text-sm text-muted-foreground">Noch keine Personen ausgewählt.</span>
-                                        ) : (
-                                            selectedMembers.map((mitglied) => (
-                                                <Badge key={mitglied._id} variant="outline">
-                                                    {mitglied.vorname} {mitglied.nachname}
-                                                </Badge>
-                                            ))
-                                        )}
-                                    </div>
-
-                                    <div className="rounded-md border max-h-80 overflow-y-auto">
-                                        {filteredMembers.length === 0 ? (
-                                            <div className="p-4 text-sm text-muted-foreground">Keine passenden Personen gefunden.</div>
-                                        ) : (
-                                            filteredMembers.map((mitglied) => {
-                                                const checked = selectedMemberIds.includes(mitglied._id);
-                                                return (
-                                                    <label key={mitglied._id} className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0">
-                                                        <div className="space-y-1">
-                                                            <div className="font-medium">
-                                                                {mitglied.vorname} {mitglied.nachname}
-                                                            </div>
-                                                            <div className="text-sm text-muted-foreground">{mitglied.email || "Keine E-Mail"}</div>
-                                                        </div>
-                                                        <Checkbox checked={checked} onCheckedChange={(value) => toggleMember(mitglied._id, Boolean(value))} />
-                                                    </label>
-                                                );
-                                            })
-                                        )}
+                                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                                        Nach dem Speichern öffnet sich direkt die Verwaltung zum Hinzufügen von Benutzern.
                                     </div>
                                 </div>
 
                                 <DialogFooter>
-                                    <Button onClick={handleSaveList} disabled={!listName.trim()}>
-                                        Speichern
+                                    <Button onClick={handleCreateList} disabled={!listName.trim()}>
+                                        Liste anlegen
                                     </Button>
                                 </DialogFooter>
                             </DialogContent>
@@ -511,7 +595,7 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
                                     {canManage && (
                                         <div className="flex gap-2">
                                             <Button variant="outline" size="sm" onClick={() => startEdit(list._id)}>
-                                                Bearbeiten
+                                                Verwalten
                                             </Button>
                                             <Button variant="destructive" size="sm" onClick={() => handleDeleteList(list._id)}>
                                                 Löschen
@@ -536,6 +620,63 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
                     )}
                 </CardContent>
             </Card>
+
+            <Dialog
+                open={manageDialogOpen}
+                onOpenChange={(open) => {
+                    setManageDialogOpen(open);
+                    if (!open) {
+                        resetManageState();
+                    }
+                }}
+            >
+                <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Liste verwalten</DialogTitle>
+                        <DialogDescription>Füge Benutzer nach dem Erstellen gezielt über die Auswahl hinzu oder entferne sie wieder.</DialogDescription>
+                    </DialogHeader>
+
+                    <div className="grid gap-4 py-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="listen-manage-name">Name</Label>
+                            <Input id="listen-manage-name" value={listName} onChange={(event) => setListName(event.target.value)} placeholder="z.B. Presseverteiler" />
+                        </div>
+
+                        <ListMemberPicker availableMembers={availableMembers ?? []} selectedMemberIds={selectedMemberIds} onAddMember={addMember} />
+
+                        <div className="grid gap-2">
+                            <Label>Ausgewählte Benutzer</Label>
+                            <div className="flex flex-wrap gap-2 rounded-md border p-3 min-h-16">
+                                {selectedMembers.length === 0 ? (
+                                    <span className="text-sm text-muted-foreground">Noch keine Personen ausgewählt.</span>
+                                ) : (
+                                    selectedMembers.map((mitglied) => (
+                                        <Badge key={mitglied._id} variant="outline" className="gap-2 py-1 pl-2 pr-1">
+                                            <span>
+                                                {mitglied.vorname} {mitglied.nachname}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="rounded-sm px-1 text-xs opacity-80 transition hover:opacity-100"
+                                                onClick={() => removeMember(mitglied._id)}
+                                                aria-label={`${mitglied.vorname} ${mitglied.nachname} entfernen`}
+                                            >
+                                                ×
+                                            </button>
+                                        </Badge>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button onClick={handleSaveListMembers} disabled={!listName.trim() || !editListId}>
+                            Änderungen speichern
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
@@ -666,7 +807,7 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
         <Card>
             <CardHeader>
                 <CardTitle>Mailversand</CardTitle>
-                <CardDescription>Empfänger wie in einem Mailprogramm eingeben und automatisch aus Listen, Rollen oder Personen vervollständigen lassen.</CardDescription>
+                <CardDescription>Empfänger wie in einem Mailprogramm eingeben und den Textkörper in Markdown verfassen.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
                 {!canSend ? (
@@ -682,7 +823,22 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
 
                         <div className="grid gap-2">
                             <Label htmlFor="mail-body">Nachricht</Label>
-                            <Textarea id="mail-body" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Schreibe hier deine Nachricht..." className="min-h-48" />
+                            <Textarea
+                                id="mail-body"
+                                value={body}
+                                onChange={(event) => setBody(event.target.value)}
+                                placeholder={"# Einladung\n\nHallo **zusammen**,\n\nbitte merkt euch den Termin vor.\n\n- Beginn: 19:00 Uhr\n- Ort: Vereinsheim"}
+                                className="min-h-48 font-mono"
+                            />
+                            <p className="text-sm text-muted-foreground">Markdown wird beim Versand, in der Vorschau und in der Historie gerendert.</p>
+                        </div>
+
+                        <div className="rounded-lg border p-4 space-y-3">
+                            <div>
+                                <p className="font-medium">Markdown-Vorschau</p>
+                                <p className="text-sm text-muted-foreground">So wird der Nachrichtentext dargestellt.</p>
+                            </div>
+                            {body.trim() ? <MarkdownContent content={body} /> : <p className="text-sm text-muted-foreground">Noch kein Nachrichtentext vorhanden.</p>}
                         </div>
 
                         <div className="grid gap-3">
@@ -794,7 +950,9 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
                                                 {entry.lastError ? <p className="text-destructive">Fehler: {entry.lastError}</p> : null}
                                             </div>
 
-                                            <div className="rounded-md bg-muted/40 p-3 text-sm whitespace-pre-wrap">{entry.body}</div>
+                                            <div className="rounded-md bg-muted/40 p-3">
+                                                <MarkdownContent content={entry.body} />
+                                            </div>
                                         </div>
                                     ))
                                 )}

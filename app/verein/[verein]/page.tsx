@@ -42,7 +42,8 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
     const canVereinView = permissionSet.has("verein.view");
     const canMitgliederView = permissionSet.has("mitglied.view");
     const canMitgliedCreate = permissionSet.has("mitglied.create");
-    const canCommunication = permissionSet.has("liste.view") || permissionSet.has("liste.manage") || permissionSet.has("mail.send");
+    const canListenManagement = permissionSet.has("liste.view") || permissionSet.has("liste.manage") || permissionSet.has("mitglied.view");
+    const canCommunication = canListenManagement || permissionSet.has("mail.send");
     const canMailSend = permissionSet.has("mail.send");
     const canKassenView = permissionSet.has("kasse.view");
     const canBuchungView = permissionSet.has("buchung.view");
@@ -105,13 +106,13 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
             meta: totalMembers > 0 ? `${activeMembers} aktiv, ${applicants} Bewerbungen offen` : "Mitgliederbereich öffnen",
         },
         {
-            title: "Kommunikation",
+            title: "Listen & Mail",
             description: "Listen verwalten und Rundmails mit Empfängervorschau versenden.",
-            href: `/verein/${verein}/listen`,
+            href: canListenManagement ? `/verein/${verein}/listen/verwaltung` : `/verein/${verein}/listen/mail`,
             icon: Mail,
             visible: canCommunication,
             eyebrow: canMailSend ? "Mailversand freigeschaltet" : "Listenverwaltung verfügbar",
-            meta: canMitgliederView ? `${emailOptIns} Mitglieder für Vereinsmails freigegeben` : "Kommunikationsbereich öffnen",
+            meta: canMitgliederView ? `${emailOptIns} Mitglieder für Vereinsmails freigegeben` : "Listenbereich öffnen",
         },
         {
             title: "Finanzen",

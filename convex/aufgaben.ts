@@ -4,6 +4,7 @@ import { MutationCtx, QueryCtx, mutation, query } from "./_generated/server";
 import { getVereinAccess, Permission } from "./rbac";
 
 const LIST_CREATOR_PERMISSIONS: Permission[] = ["settings.edit", "rolle.manage"];
+const TASK_LIST_VIEW_ALL_PERMISSION: Permission = "aufgaben.viewAll";
 const TODAY_UPCOMING_WINDOW_DAYS = 14;
 
 const taskListRoleValidator = v.union(v.literal("admin"), v.literal("bearbeiter"), v.literal("mitarbeiter"));
@@ -173,6 +174,10 @@ function canEditTask(access: TaskListAccess, task: Doc<"aufgabe">) {
     return access.canEditAllTasks || intersects(task.zustaendige, access.myMitgliedIdSet);
 }
 
+function canViewAllTaskLists(permissionSet: ReadonlySet<Permission>) {
+    return permissionSet.has(TASK_LIST_VIEW_ALL_PERMISSION);
+}
+
 async function hasAdminMembershipInVerein(ctx: ReadCtx, vereinId: Id<"verein">, mitgliedIds: readonly Id<"mitglied">[]) {
     if (mitgliedIds.length === 0) {
         return false;
@@ -307,7 +312,21 @@ async function getTaskListAccess(ctx: ReadCtx, listeId: Id<"aufgaben_liste">): P
     const role = highestRole(memberships.filter((membership) => moduleContext.myMitgliedIdSet.has(membership.mitgliedId)).map((membership) => membership.rolle));
 
     if (!role) {
-        throw new Error("Access denied");
+        if (!canViewAllTaskLists(moduleContext.access.permissions)) {
+            throw new Error("Access denied");
+        }
+
+        return {
+            ...moduleContext,
+            liste,
+            memberships,
+            role: "mitarbeiter",
+            canManageMembers: false,
+            canEditAllTasks: false,
+            canCreateTasks: false,
+            canDeleteTasks: false,
+            canDeleteList: false,
+        };
     }
 
     return {
@@ -355,7 +374,7 @@ async function loadAccessibleLists(ctx: ReadCtx, vereinId: Id<"verein">, moduleC
         .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
         .collect();
 
-    if (moduleContext.access.isOwner) {
+    if (moduleContext.access.isOwner || canViewAllTaskLists(moduleContext.access.permissions)) {
         return lists;
     }
 
@@ -464,7 +483,7 @@ export const overview = query({
 
         return {
             canCreateLists: moduleContext.canCreateLists,
-            canOpenModule: moduleContext.canCreateLists || accessibleLists.length > 0,
+            canOpenModule: moduleContext.canCreateLists || canViewAllTaskLists(moduleContext.access.permissions) || accessibleLists.length > 0,
             myMitgliedIds: moduleContext.myMitgliedIds,
             totalAccessibleLists: accessibleLists.length,
             totalOpenTasks: allTasks.filter(({ task }) => isTaskOpen(task.status)).length,

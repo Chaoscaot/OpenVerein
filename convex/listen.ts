@@ -6,14 +6,14 @@ import { getVereinAccess, Permission } from "./rbac";
 
 const SYSTEM_LISTS = [
     {
+        key: "alle",
+        name: "Alle",
+        description: "Alle Personen im Verein unabhängig vom Status.",
+    },
+    {
         key: "mitglieder",
         name: "Mitglieder",
         description: "Alle aktiven Mitglieder und Fördermitglieder.",
-    },
-    {
-        key: "vorstand",
-        name: "Vorstand",
-        description: "Mitglieder mit einer Rolle, deren Name 'Vorstand' enthält.",
     },
     {
         key: "ehemalige",
@@ -132,21 +132,12 @@ async function loadMitglieder(ctx: ReadCtx, vereinId: Id<"verein">) {
         .collect();
 }
 
-async function loadVorstandRollenIds(ctx: ReadCtx, vereinId: Id<"verein">) {
-    const rollen = await ctx.db
-        .query("vereins_rollen")
-        .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
-        .collect();
-
-    return new Set(rollen.filter((rolle) => rolle.name.toLowerCase().includes("vorstand")).map((rolle) => rolle._id));
-}
-
-function matchesSystemList(key: SystemListKey, mitglied: Doc<"mitglied">, vorstandRollenIds: ReadonlySet<Id<"vereins_rollen">>) {
+function matchesSystemList(key: SystemListKey, mitglied: Doc<"mitglied">) {
     switch (key) {
+        case "alle":
+            return true;
         case "mitglieder":
             return isAktivesMitglied(mitglied);
-        case "vorstand":
-            return !isEhemalig(mitglied) && mitglied.rollen.some((rolleId) => vorstandRollenIds.has(rolleId));
         case "ehemalige":
             return isEhemalig(mitglied);
         case "kontakte":
@@ -156,17 +147,15 @@ function matchesSystemList(key: SystemListKey, mitglied: Doc<"mitglied">, vorsta
     }
 }
 
-async function resolveSystemMembers(ctx: ReadCtx, vereinId: Id<"verein">, key: SystemListKey, mitglieder?: Doc<"mitglied">[], vorstandRollenIds?: ReadonlySet<Id<"vereins_rollen">>) {
+async function resolveSystemMembers(ctx: ReadCtx, vereinId: Id<"verein">, key: SystemListKey, mitglieder?: Doc<"mitglied">[]) {
     const resolvedMitglieder = mitglieder ?? (await loadMitglieder(ctx, vereinId));
-    const resolvedVorstandRollenIds = vorstandRollenIds ?? (await loadVorstandRollenIds(ctx, vereinId));
 
-    return resolvedMitglieder.filter((mitglied) => matchesSystemList(key, mitglied, resolvedVorstandRollenIds));
+    return resolvedMitglieder.filter((mitglied) => matchesSystemList(key, mitglied));
 }
 
 async function loadListOverviewEntries(ctx: ReadCtx, vereinId: Id<"verein">) {
-    const [mitglieder, vorstandRollenIds, customLists] = await Promise.all([
+    const [mitglieder, customLists] = await Promise.all([
         loadMitglieder(ctx, vereinId),
-        loadVorstandRollenIds(ctx, vereinId),
         ctx.db
             .query("mitglieder_liste")
             .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
@@ -178,7 +167,7 @@ async function loadListOverviewEntries(ctx: ReadCtx, vereinId: Id<"verein">) {
         name: definition.name,
         description: definition.description,
         kind: "system" as const,
-        memberCount: mitglieder.filter((mitglied) => matchesSystemList(definition.key, mitglied, vorstandRollenIds)).length,
+        memberCount: mitglieder.filter((mitglied) => matchesSystemList(definition.key, mitglied)).length,
     }));
 
     const customListSummaries = await Promise.all(
@@ -199,7 +188,7 @@ async function loadListOverviewEntries(ctx: ReadCtx, vereinId: Id<"verein">) {
         }),
     );
 
-    return [...systemLists, ...customListSummaries].sort((left, right) => left.name.localeCompare(right.name, "de"));
+    return [...systemLists, ...customListSummaries.sort((left, right) => left.name.localeCompare(right.name, "de"))];
 }
 
 async function ensureUniqueListName(ctx: MutationCtx, vereinId: Id<"verein">, name: string, excludeId?: Id<"mitglieder_liste">) {
@@ -261,7 +250,6 @@ async function resolveMembersForListKey(
     options?: {
         mitglieder?: Doc<"mitglied">[];
         memberById?: Map<Id<"mitglied">, Doc<"mitglied">>;
-        vorstandRollenIds?: ReadonlySet<Id<"vereins_rollen">>;
     },
 ) {
     if (listKey.startsWith("system:")) {
@@ -274,7 +262,7 @@ async function resolveMembersForListKey(
         return {
             key: listKey,
             name: definition.name,
-            members: await resolveSystemMembers(ctx, vereinId, systemKey, options?.mitglieder, options?.vorstandRollenIds),
+            members: await resolveSystemMembers(ctx, vereinId, systemKey, options?.mitglieder),
         };
     }
 
@@ -298,7 +286,6 @@ async function resolveRecipientTarget(
     options?: {
         mitglieder?: Doc<"mitglied">[];
         memberById?: Map<Id<"mitglied">, Doc<"mitglied">>;
-        vorstandRollenIds?: ReadonlySet<Id<"vereins_rollen">>;
         roleById?: Map<Id<"vereins_rollen">, Doc<"vereins_rollen">>;
     },
 ): Promise<ResolvedRecipientTarget> {
@@ -361,9 +348,8 @@ async function collectRecipientsForTargetKeys(ctx: ReadCtx, vereinId: Id<"verein
 
     const needsMitglieder = uniqueTargetKeys.some((targetKey) => targetKey.startsWith("system:") || targetKey.startsWith("role:") || targetKey.startsWith("member:"));
     const needsRollen = uniqueTargetKeys.some((targetKey) => targetKey.startsWith("role:"));
-    const needsVorstandRollen = uniqueTargetKeys.some((targetKey) => targetKey.startsWith("system:"));
 
-    const [mitglieder, rollen, vorstandRollenIds] = await Promise.all([
+    const [mitglieder, rollen] = await Promise.all([
         needsMitglieder ? loadMitglieder(ctx, vereinId) : Promise.resolve([]),
         needsRollen
             ? ctx.db
@@ -371,7 +357,6 @@ async function collectRecipientsForTargetKeys(ctx: ReadCtx, vereinId: Id<"verein
                   .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
                   .collect()
             : Promise.resolve([]),
-        needsVorstandRollen ? loadVorstandRollenIds(ctx, vereinId) : Promise.resolve(new Set<Id<"vereins_rollen">>()),
     ]);
 
     const memberById = new Map(mitglieder.map((mitglied) => [mitglied._id, mitglied]));
@@ -385,7 +370,6 @@ async function collectRecipientsForTargetKeys(ctx: ReadCtx, vereinId: Id<"verein
         const { name, kind, members } = await resolveRecipientTarget(ctx, vereinId, targetKey, {
             mitglieder,
             memberById,
-            vorstandRollenIds,
             roleById,
         });
 
