@@ -1,7 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { Doc, Id } from "./_generated/dataModel";
+import { MutationCtx, QueryCtx, mutation, query } from "./_generated/server";
+import { validateKostenstellenAssignment } from "./kostenstellenUtils";
 import { requirePermission } from "./rbac";
 import { r2 } from "./files";
+import { compareKontoNummern, getDefaultSkr42AccountNumberForKasseType, SKR42_BASE_ACCOUNTS } from "../lib/skr42";
 
 function roundToCent(value: number) {
     return Math.round(value * 100);
@@ -13,6 +16,92 @@ function isAmountMatching(buchungsBetrag: number, rechnungsBetrag: number) {
 
 function amountDiff(buchungsBetrag: number, rechnungsBetrag: number) {
     return Math.abs(Math.abs(buchungsBetrag) - Math.abs(rechnungsBetrag));
+}
+
+type BuchhaltungKontoDoc = Doc<"buchhaltung_konto">;
+type KasseDoc = Doc<"kasse">;
+type Ctx = QueryCtx | MutationCtx;
+
+async function loadKontenplan(ctx: Ctx, vereinId: Id<"verein">) {
+    const konten = await ctx.db
+        .query("buchhaltung_konto")
+        .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
+        .collect();
+
+    return konten.sort((a, b) => a.sortOrder - b.sortOrder || compareKontoNummern(a.nummer, b.nummer));
+}
+
+async function getBuchhaltungKontoOrThrow(ctx: Ctx, kontoId: Id<"buchhaltung_konto">, vereinId: Id<"verein">) {
+    const konto = await ctx.db.get(kontoId);
+    if (!konto || konto.vereinId !== vereinId) {
+        throw new Error("Sachkonto nicht gefunden");
+    }
+    return konto;
+}
+
+async function resolveKassenKontoOrThrow(ctx: Ctx, kasse: KasseDoc) {
+    if (!kasse.buchhaltungKontoId) {
+        throw new Error("Für diese Kasse ist noch kein SKR42-Liquiditätskonto hinterlegt");
+    }
+
+    const konto = await ctx.db.get(kasse.buchhaltungKontoId);
+    if (!konto || konto.vereinId !== kasse.vereinId) {
+        throw new Error("Das verknüpfte Liquiditätskonto ist nicht mehr verfügbar");
+    }
+
+    return konto;
+}
+
+function buildKontierung(betrag: number, liquiditaetskontoId: Id<"buchhaltung_konto">, gegenkontoId: Id<"buchhaltung_konto">) {
+    return betrag < 0
+        ? {
+              sollKontoId: gegenkontoId,
+              habenKontoId: liquiditaetskontoId,
+          }
+        : {
+              sollKontoId: liquiditaetskontoId,
+              habenKontoId: gegenkontoId,
+          };
+}
+
+async function validateGegenkontoForBuchung(
+    ctx: Ctx,
+    args: {
+        vereinId: Id<"verein">;
+        betrag: number;
+        gegenkontoId?: Id<"buchhaltung_konto">;
+    },
+) {
+    if (!args.gegenkontoId) {
+        throw new Error("Bitte ein SKR42-Gegenkonto auswählen");
+    }
+
+    const konto = await getBuchhaltungKontoOrThrow(ctx, args.gegenkontoId, args.vereinId);
+
+    if (!konto.aktiv) {
+        throw new Error("Das ausgewählte SKR42-Konto ist deaktiviert");
+    }
+
+    const expectedType = args.betrag < 0 ? "expense" : "income";
+    if (konto.typ !== expectedType) {
+        throw new Error(args.betrag < 0 ? "Für Ausgaben muss ein Aufwandskonto verwendet werden" : "Für Einnahmen muss ein Ertragskonto verwendet werden");
+    }
+
+    return konto;
+}
+
+async function resolveDefaultKassenkontoId(ctx: Ctx, vereinId: Id<"verein">, typ: KasseDoc["typ"]) {
+    const nummer = getDefaultSkr42AccountNumberForKasseType(typ);
+    if (!nummer) {
+        return undefined;
+    }
+
+    const konto = await ctx.db
+        .query("buchhaltung_konto")
+        .withIndex("by_vereinId_nummer", (q) => q.eq("vereinId", vereinId).eq("nummer", nummer))
+        .first();
+
+    return konto?._id;
 }
 
 export const getKassen = query({
@@ -40,6 +129,145 @@ export const getKasse = query({
     },
 });
 
+export const getBuchhaltungOverview = query({
+    args: { vereinId: v.id("verein") },
+    handler: async (ctx, args) => {
+        const access = await requirePermission(ctx, args.vereinId, "finanzen.view");
+
+        const [konten, kassen] = await Promise.all([
+            loadKontenplan(ctx, args.vereinId),
+            ctx.db
+                .query("kasse")
+                .withIndex("by_vereinId", (q) => q.eq("vereinId", args.vereinId))
+                .collect(),
+        ]);
+
+        const liquiditaetskonten = konten.filter((konto) => konto.isLiquiditaetskonto);
+        const mappedKassen = kassen.filter((kasse) => kasse.buchhaltungKontoId).length;
+
+        return {
+            kontenrahmen: access.verein.buchhaltung?.kontenrahmen ?? null,
+            version: access.verein.buchhaltung?.version ?? null,
+            initializedAt: access.verein.buchhaltung?.initializedAt ?? null,
+            kontenAnzahl: konten.length,
+            liquiditaetskontenAnzahl: liquiditaetskonten.length,
+            kassenAnzahl: kassen.length,
+            mappedKassen,
+            unmappedKassen: kassen.length - mappedKassen,
+            isInitialized: konten.length > 0,
+        };
+    },
+});
+
+export const getKontenplan = query({
+    args: { vereinId: v.id("verein") },
+    handler: async (ctx, args) => {
+        await requirePermission(ctx, args.vereinId, "finanzen.view");
+        return await loadKontenplan(ctx, args.vereinId);
+    },
+});
+
+export const initializeSkr42 = mutation({
+    args: { vereinId: v.id("verein") },
+    handler: async (ctx, args) => {
+        await requirePermission(ctx, args.vereinId, "settings.edit");
+
+        const now = new Date().toISOString();
+        const existingKonten = await loadKontenplan(ctx, args.vereinId);
+        const kontoNummern = new Set(existingKonten.map((konto) => konto.nummer));
+
+        let createdCount = 0;
+        for (const vorlage of SKR42_BASE_ACCOUNTS) {
+            if (kontoNummern.has(vorlage.nummer)) {
+                continue;
+            }
+
+            await ctx.db.insert("buchhaltung_konto", {
+                vereinId: args.vereinId,
+                kontenrahmen: "skr42",
+                nummer: vorlage.nummer,
+                name: vorlage.name,
+                typ: vorlage.typ,
+                bereich: vorlage.bereich,
+                beschreibung: vorlage.beschreibung,
+                isLiquiditaetskonto: !!vorlage.isLiquiditaetskonto,
+                aktiv: true,
+                standard: true,
+                sortOrder: vorlage.sortOrder,
+                createdAt: now,
+                updatedAt: now,
+            });
+
+            kontoNummern.add(vorlage.nummer);
+            createdCount += 1;
+        }
+
+        const kassen = await ctx.db
+            .query("kasse")
+            .withIndex("by_vereinId", (q) => q.eq("vereinId", args.vereinId))
+            .collect();
+
+        let mappedKassen = 0;
+        for (const kasse of kassen) {
+            if (kasse.buchhaltungKontoId) {
+                mappedKassen += 1;
+                continue;
+            }
+
+            const kontoId = await resolveDefaultKassenkontoId(ctx, args.vereinId, kasse.typ);
+            if (!kontoId) {
+                continue;
+            }
+
+            await ctx.db.patch(kasse._id, {
+                buchhaltungKontoId: kontoId,
+            });
+            mappedKassen += 1;
+        }
+
+        await ctx.db.patch(args.vereinId, {
+            buchhaltung: {
+                kontenrahmen: "skr42",
+                version: "base-2026-03",
+                initializedAt: now,
+            },
+        });
+
+        return {
+            createdCount,
+            mappedKassen,
+            totalKonten: kontoNummern.size,
+        };
+    },
+});
+
+export const assignKasseBuchhaltungKonto = mutation({
+    args: {
+        kasseId: v.id("kasse"),
+        buchhaltungKontoId: v.id("buchhaltung_konto"),
+    },
+    handler: async (ctx, args) => {
+        const kasse = await ctx.db.get(args.kasseId);
+        if (!kasse) {
+            throw new Error("Kasse nicht gefunden");
+        }
+
+        await requirePermission(ctx, kasse.vereinId, "kasse.edit");
+
+        const konto = await getBuchhaltungKontoOrThrow(ctx, args.buchhaltungKontoId, kasse.vereinId);
+
+        if (!konto.isLiquiditaetskonto) {
+            throw new Error("Der Kasse kann nur ein Liquiditätskonto zugeordnet werden");
+        }
+
+        await ctx.db.patch(args.kasseId, {
+            buchhaltungKontoId: args.buchhaltungKontoId,
+        });
+
+        return args.kasseId;
+    },
+});
+
 export const createKasse = mutation({
     args: {
         vereinId: v.id("verein"),
@@ -50,13 +278,35 @@ export const createKasse = mutation({
         waehrung: v.string(),
         anfangsbestand: v.number(),
         beschreibung: v.optional(v.string()),
+        buchhaltungKontoId: v.optional(v.id("buchhaltung_konto")),
         aktiv: v.boolean(),
     },
     handler: async (ctx, args) => {
         await requirePermission(ctx, args.vereinId, "kasse.create");
 
+        const verein = await ctx.db.get(args.vereinId);
+        if (!verein) {
+            throw new Error("Verein nicht gefunden");
+        }
+
+        let buchhaltungKontoId = args.buchhaltungKontoId;
+        if (verein.buchhaltung?.kontenrahmen === "skr42") {
+            buchhaltungKontoId ??= await resolveDefaultKassenkontoId(ctx, args.vereinId, args.typ);
+
+            if (!buchhaltungKontoId) {
+                throw new Error("Für die neue Kasse konnte kein passendes SKR42-Liquiditätskonto ermittelt werden");
+            }
+
+            const konto = await getBuchhaltungKontoOrThrow(ctx, buchhaltungKontoId, args.vereinId);
+
+            if (!konto.isLiquiditaetskonto) {
+                throw new Error("Für Kassen kann nur ein Liquiditätskonto gewählt werden");
+            }
+        }
+
         return await ctx.db.insert("kasse", {
             ...args,
+            buchhaltungKontoId,
             aktuellerBestand: args.anfangsbestand,
         });
     },
@@ -71,6 +321,7 @@ export const updateKasse = mutation({
         bic: v.optional(v.string()),
         waehrung: v.optional(v.string()),
         beschreibung: v.optional(v.string()),
+        buchhaltungKontoId: v.optional(v.id("buchhaltung_konto")),
         aktiv: v.optional(v.boolean()),
     },
     handler: async (ctx, args) => {
@@ -81,6 +332,14 @@ export const updateKasse = mutation({
         }
 
         await requirePermission(ctx, kasse.vereinId, "kasse.edit");
+
+        if (updates.buchhaltungKontoId) {
+            const konto = await getBuchhaltungKontoOrThrow(ctx, updates.buchhaltungKontoId, kasse.vereinId);
+
+            if (!konto.isLiquiditaetskonto) {
+                throw new Error("Für Kassen kann nur ein Liquiditätskonto gewählt werden");
+            }
+        }
 
         return await ctx.db.patch(kasseId, updates);
     },
@@ -151,6 +410,9 @@ export const createBuchung = mutation({
         belegNummer: v.optional(v.string()),
         beitragsSatzId: v.optional(v.id("beitrags_satz")),
         mitgliedId: v.optional(v.id("mitglied")),
+        gegenkontoId: v.optional(v.id("buchhaltung_konto")),
+        kostenstelleId: v.optional(v.id("kostenstelle")),
+        ausgabenpunktId: v.optional(v.id("kostenstelle_ausgabenpunkt")),
     },
     handler: async (ctx, args) => {
         await requirePermission(ctx, args.vereinId, "buchung.create");
@@ -160,7 +422,40 @@ export const createBuchung = mutation({
             throw new Error("Kasse gehört nicht zum Verein");
         }
 
-        const buchungId = await ctx.db.insert("kassen_buchung", args);
+        await validateKostenstellenAssignment(ctx, {
+            vereinId: args.vereinId,
+            kostenstelleId: args.kostenstelleId,
+            ausgabenpunktId: args.ausgabenpunktId,
+            betrag: args.betrag,
+        });
+
+        let gegenkontoId = args.gegenkontoId;
+        let sollKontoId: Id<"buchhaltung_konto"> | undefined;
+        let habenKontoId: Id<"buchhaltung_konto"> | undefined;
+
+        const verein = await ctx.db.get(args.vereinId);
+        if (!verein) {
+            throw new Error("Verein nicht gefunden");
+        }
+
+        if (verein.buchhaltung?.kontenrahmen === "skr42") {
+            const liquiditaetskonto = await resolveKassenKontoOrThrow(ctx, kasse);
+            const gegenkonto = await validateGegenkontoForBuchung(ctx, {
+                vereinId: args.vereinId,
+                betrag: args.betrag,
+                gegenkontoId,
+            });
+
+            gegenkontoId = gegenkonto._id;
+            ({ sollKontoId, habenKontoId } = buildKontierung(args.betrag, liquiditaetskonto._id, gegenkonto._id));
+        }
+
+        const buchungId = await ctx.db.insert("kassen_buchung", {
+            ...args,
+            gegenkontoId,
+            sollKontoId,
+            habenKontoId,
+        });
 
         await ctx.db.patch(args.kasseId, {
             aktuellerBestand: kasse.aktuellerBestand + args.betrag,
@@ -210,6 +505,30 @@ export const createUmbuchung = mutation({
         const vonZweck = transferZweck ? `Umbuchung an ${zuKasse.name}: ${transferZweck}` : `Umbuchung an ${zuKasse.name}`;
         const zuZweck = transferZweck ? `Umbuchung von ${vonKasse.name}: ${transferZweck}` : `Umbuchung von ${vonKasse.name}`;
 
+        const verein = await ctx.db.get(args.vereinId);
+        if (!verein) {
+            throw new Error("Verein nicht gefunden");
+        }
+
+        let vonSollKontoId: Id<"buchhaltung_konto"> | undefined;
+        let vonHabenKontoId: Id<"buchhaltung_konto"> | undefined;
+        let vonGegenkontoId: Id<"buchhaltung_konto"> | undefined;
+        let zuSollKontoId: Id<"buchhaltung_konto"> | undefined;
+        let zuHabenKontoId: Id<"buchhaltung_konto"> | undefined;
+        let zuGegenkontoId: Id<"buchhaltung_konto"> | undefined;
+
+        if (verein.buchhaltung?.kontenrahmen === "skr42") {
+            const vonKonto = await resolveKassenKontoOrThrow(ctx, vonKasse);
+            const zuKonto = await resolveKassenKontoOrThrow(ctx, zuKasse);
+
+            vonSollKontoId = zuKonto._id;
+            vonHabenKontoId = vonKonto._id;
+            vonGegenkontoId = zuKonto._id;
+            zuSollKontoId = zuKonto._id;
+            zuHabenKontoId = vonKonto._id;
+            zuGegenkontoId = vonKonto._id;
+        }
+
         const vonBuchungId = await ctx.db.insert("kassen_buchung", {
             kasseId: args.vonKasseId,
             vereinId: args.vereinId,
@@ -218,6 +537,9 @@ export const createUmbuchung = mutation({
             kategorie: "Umbuchung",
             zweck: vonZweck,
             belegNummer: args.belegNummer,
+            gegenkontoId: vonGegenkontoId,
+            sollKontoId: vonSollKontoId,
+            habenKontoId: vonHabenKontoId,
         });
 
         const zuBuchungId = await ctx.db.insert("kassen_buchung", {
@@ -228,6 +550,9 @@ export const createUmbuchung = mutation({
             kategorie: "Umbuchung",
             zweck: zuZweck,
             belegNummer: args.belegNummer,
+            gegenkontoId: zuGegenkontoId,
+            sollKontoId: zuSollKontoId,
+            habenKontoId: zuHabenKontoId,
         });
 
         await ctx.db.patch(args.vonKasseId, {

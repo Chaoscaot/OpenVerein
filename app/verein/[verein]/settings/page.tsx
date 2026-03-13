@@ -4,16 +4,22 @@ import { Id } from "@/convex/_generated/dataModel";
 import { fetchAuthQuery } from "@/lib/auth-server";
 import { VereinSettings } from "@/components/verein/VereinSettings";
 
-export default async function SettingsPage({ params }: { params: Promise<{ verein: string }> }) {
-    const { verein } = await params;
-    const v = await fetchAuthQuery(api.verein.get, { id: verein as Id<"verein"> });
+export default async function SettingsPage({
+  params,
+}: {
+  params: Promise<{ verein: string }>;
+}) {
+  const { verein } = await params;
+  const v = await fetchAuthQuery(api.verein.get, {
+    id: verein as Id<"verein">,
+  });
 
-    return (
-        <>
-            <SiteHeader title="Vereinseinstellungen"></SiteHeader>
-            <div className="p-4 space-y-4">
-                <VereinSettings verein={v} />
-            </div>
-        </>
-    );
+  return (
+    <>
+      <SiteHeader title="Vereinseinstellungen"></SiteHeader>
+      <div className="p-4 space-y-4">
+        <VereinSettings verein={v} />
+      </div>
+    </>
+  );
 }

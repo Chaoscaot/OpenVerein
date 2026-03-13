@@ -22,6 +22,15 @@ type Attachment = {
     size: number;
 };
 
+type RecipientTargetOption = {
+    key: string;
+    name: string;
+    description: string;
+    kind: "list" | "role" | "member";
+    recipientCount: number;
+    blockedCount: number;
+};
+
 function formatDateTime(value: string) {
     return new Intl.DateTimeFormat("de-DE", {
         dateStyle: "medium",
@@ -61,6 +70,28 @@ function formatFileSize(size: number) {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getRecipientTargetLabel(kind: RecipientTargetOption["kind"]) {
+    switch (kind) {
+        case "role":
+            return "Rolle";
+        case "member":
+            return "Person";
+        default:
+            return "Liste";
+    }
+}
+
+function getRecipientTargetBadgeVariant(kind: RecipientTargetOption["kind"]) {
+    switch (kind) {
+        case "role":
+            return "outline" as const;
+        case "member":
+            return "default" as const;
+        default:
+            return "secondary" as const;
+    }
+}
+
 function useCommunicationPermissions(vereinId: Id<"verein">) {
     const acl = useQuery(api.permissions.getMyPermissions, { vereinId });
 
@@ -85,6 +116,164 @@ function CommunicationStateCard({ title, description }: { title: string; descrip
                 <CardDescription>{description}</CardDescription>
             </CardHeader>
         </Card>
+    );
+}
+
+function RecipientTargetInput({ options, selectedKeys, onChange }: { options: RecipientTargetOption[]; selectedKeys: string[]; onChange: (value: string[]) => void }) {
+    const [query, setQuery] = useState("");
+    const [open, setOpen] = useState(false);
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    const optionByKey = useMemo(() => new Map(options.map((option) => [option.key, option])), [options]);
+
+    const selectedOptions = useMemo(() => selectedKeys.map((key) => optionByKey.get(key)).filter((option): option is RecipientTargetOption => option !== undefined), [optionByKey, selectedKeys]);
+
+    const filteredOptions = useMemo(() => {
+        const selected = new Set(selectedKeys);
+        const normalizedQuery = query.trim().toLowerCase();
+
+        return options.filter((option) => {
+            if (selected.has(option.key)) {
+                return false;
+            }
+
+            if (!normalizedQuery) {
+                return true;
+            }
+
+            return `${option.name} ${option.description} ${getRecipientTargetLabel(option.kind)}`.toLowerCase().includes(normalizedQuery);
+        });
+    }, [options, query, selectedKeys]);
+
+    const groupedOptions = useMemo(
+        () => ({
+            list: filteredOptions.filter((option) => option.kind === "list"),
+            role: filteredOptions.filter((option) => option.kind === "role"),
+            member: filteredOptions.filter((option) => option.kind === "member"),
+        }),
+        [filteredOptions],
+    );
+
+    const addOption = (key: string) => {
+        if (selectedKeys.includes(key)) {
+            return;
+        }
+
+        onChange([...selectedKeys, key]);
+        setQuery("");
+        setOpen(true);
+        inputRef.current?.focus();
+    };
+
+    const removeOption = (key: string) => {
+        onChange(selectedKeys.filter((currentKey) => currentKey !== key));
+    };
+
+    return (
+        <div className="grid gap-2">
+            <Label htmlFor="mail-recipients">Empfänger</Label>
+            <div className="relative">
+                <div
+                    className="min-h-11 rounded-md border bg-background px-3 py-2 flex flex-wrap items-center gap-2 focus-within:ring-1 focus-within:ring-ring"
+                    onClick={() => {
+                        setOpen(true);
+                        inputRef.current?.focus();
+                    }}
+                >
+                    {selectedOptions.map((option) => (
+                        <Badge key={option.key} variant={getRecipientTargetBadgeVariant(option.kind)} className="gap-2 py-1 pl-2 pr-1">
+                            <span className="max-w-48 truncate">{option.name}</span>
+                            <span className="text-[10px] uppercase opacity-70">{getRecipientTargetLabel(option.kind)}</span>
+                            <button
+                                type="button"
+                                className="rounded-sm px-1 text-xs opacity-80 transition hover:opacity-100"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeOption(option.key);
+                                }}
+                                aria-label={`${option.name} entfernen`}
+                            >
+                                ×
+                            </button>
+                        </Badge>
+                    ))}
+
+                    <input
+                        id="mail-recipients"
+                        ref={inputRef}
+                        value={query}
+                        onChange={(event) => {
+                            setQuery(event.target.value);
+                            setOpen(true);
+                        }}
+                        onFocus={() => setOpen(true)}
+                        onBlur={() => {
+                            window.setTimeout(() => setOpen(false), 120);
+                        }}
+                        onKeyDown={(event) => {
+                            if (event.key === "Backspace" && query.length === 0 && selectedKeys.length > 0) {
+                                removeOption(selectedKeys[selectedKeys.length - 1]);
+                                return;
+                            }
+
+                            if ((event.key === "Enter" || event.key === "Tab") && filteredOptions.length > 0) {
+                                event.preventDefault();
+                                addOption(filteredOptions[0].key);
+                                return;
+                            }
+
+                            if (event.key === "Escape") {
+                                setOpen(false);
+                            }
+                        }}
+                        placeholder={selectedOptions.length === 0 ? "Listen, Rollen oder Personen eingeben..." : "Weitere Empfänger hinzufügen..."}
+                        className="h-7 min-w-[14rem] flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-muted-foreground"
+                        autoComplete="off"
+                    />
+                </div>
+
+                {open ? (
+                    <div className="absolute z-50 mt-2 max-h-80 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+                        {filteredOptions.length === 0 ? (
+                            <p className="px-3 py-2 text-sm text-muted-foreground">Keine passenden Listen, Rollen oder Personen gefunden.</p>
+                        ) : (
+                            (["list", "role", "member"] as const).map((kind) => {
+                                const group = groupedOptions[kind];
+                                if (group.length === 0) {
+                                    return null;
+                                }
+
+                                return (
+                                    <div key={kind} className="border-b last:border-b-0">
+                                        <p className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{getRecipientTargetLabel(kind)}</p>
+                                        <div className="pb-1">
+                                            {group.map((option) => (
+                                                <button
+                                                    key={option.key}
+                                                    type="button"
+                                                    className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-accent hover:text-accent-foreground"
+                                                    onMouseDown={(event) => event.preventDefault()}
+                                                    onClick={() => addOption(option.key)}
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="truncate font-medium">{option.name}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{option.description}</p>
+                                                    </div>
+                                                    <Badge variant={getRecipientTargetBadgeVariant(option.kind)} className="shrink-0">
+                                                        {option.recipientCount}
+                                                    </Badge>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                ) : null}
+            </div>
+            <p className="text-sm text-muted-foreground">Tippe frei wie in einem E-Mail-Programm. Vorschläge werden aus Listen, Rollen und Personen ergänzt.</p>
+        </div>
     );
 }
 
@@ -354,29 +543,29 @@ export function ListenManager({ vereinId }: { vereinId: Id<"verein"> }) {
 export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
     const { acl, canRead, canSend } = useCommunicationPermissions(vereinId);
 
-    const overview = useQuery(api.listen.overview, canRead ? { vereinId } : "skip");
+    const recipientTargets = useQuery(api.listen.recipientTargets, canSend ? { vereinId } : "skip");
     const history = useQuery(api.listen.history, canRead ? { vereinId, limit: 10 } : "skip");
     const sendMail = useMutation(api.listen.sendMail);
     const deleteFile = useMutation(api.files.deleteFile);
     const uploadFile = useUploadFile(api.files);
 
-    const [selectedListKeys, setSelectedListKeys] = useState<string[]>([]);
+    const [selectedTargetKeys, setSelectedTargetKeys] = useState<string[]>([]);
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    const validSelectedListKeys = useMemo(() => {
-        if (!overview) {
-            return selectedListKeys;
+    const validSelectedTargetKeys = useMemo(() => {
+        if (!recipientTargets) {
+            return selectedTargetKeys;
         }
 
-        const validKeys = new Set(overview.map((list) => list.key));
-        return selectedListKeys.filter((key) => validKeys.has(key));
-    }, [overview, selectedListKeys]);
+        const validKeys = new Set(recipientTargets.map((target) => target.key));
+        return selectedTargetKeys.filter((key) => validKeys.has(key));
+    }, [recipientTargets, selectedTargetKeys]);
 
-    const preview = useQuery(api.listen.previewRecipients, canSend ? { vereinId, listKeys: validSelectedListKeys } : "skip");
+    const preview = useQuery(api.listen.previewRecipients, canSend ? { vereinId, targetKeys: validSelectedTargetKeys } : "skip");
 
     const handleAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files ?? []);
@@ -432,8 +621,8 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
             return;
         }
 
-        if (validSelectedListKeys.length === 0) {
-            toast.error("Bitte wähle mindestens eine Liste aus");
+        if (validSelectedTargetKeys.length === 0) {
+            toast.error("Bitte wähle mindestens ein Empfängerziel aus");
             return;
         }
 
@@ -450,7 +639,7 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
         try {
             const result = await sendMail({
                 vereinId,
-                listKeys: validSelectedListKeys,
+                targetKeys: validSelectedTargetKeys,
                 subject,
                 body,
                 attachments,
@@ -458,20 +647,11 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
             toast.success(`Mailversand gestartet für ${result.recipientCount} Empfänger`);
             setSubject("");
             setBody("");
-            setSelectedListKeys([]);
+            setSelectedTargetKeys([]);
             setAttachments([]);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Mail konnte nicht versendet werden");
         }
-    };
-
-    const toggleListSelection = (listKey: string, checked: boolean) => {
-        setSelectedListKeys((current) => {
-            if (checked) {
-                return Array.from(new Set([...current, listKey]));
-            }
-            return current.filter((key) => key !== listKey);
-        });
     };
 
     if (acl === undefined) {
@@ -486,30 +666,14 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
         <Card>
             <CardHeader>
                 <CardTitle>Mailversand</CardTitle>
-                <CardDescription>Wähle eine oder mehrere Listen und versende eine Mail mit Anhängen per Blindkopie.</CardDescription>
+                <CardDescription>Empfänger wie in einem Mailprogramm eingeben und automatisch aus Listen, Rollen oder Personen vervollständigen lassen.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
                 {!canSend ? (
                     <p className="text-sm text-muted-foreground">Dir fehlt die Berechtigung zum Versenden von E-Mails.</p>
                 ) : (
                     <>
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            {(overview ?? []).map((list) => {
-                                const checked = validSelectedListKeys.includes(list.key);
-                                return (
-                                    <label key={list.key} className="rounded-lg border p-4 flex items-start gap-3 cursor-pointer">
-                                        <Checkbox checked={checked} onCheckedChange={(value) => toggleListSelection(list.key, Boolean(value))} />
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium">{list.name}</span>
-                                                <Badge variant={list.kind === "system" ? "secondary" : "outline"}>{list.memberCount}</Badge>
-                                            </div>
-                                            <p className="text-sm text-muted-foreground">{list.description}</p>
-                                        </div>
-                                    </label>
-                                );
-                            })}
-                        </div>
+                        <RecipientTargetInput options={recipientTargets ?? []} selectedKeys={validSelectedTargetKeys} onChange={setSelectedTargetKeys} />
 
                         <div className="grid gap-2">
                             <Label htmlFor="mail-subject">Betreff</Label>
@@ -564,8 +728,8 @@ export function MailSender({ vereinId }: { vereinId: Id<"verein"> }) {
                                 </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                {(preview?.listSummaries ?? []).map((summary) => (
-                                    <Badge key={summary.key} variant="outline">
+                                {(preview?.targetSummaries ?? []).map((summary) => (
+                                    <Badge key={summary.key} variant={getRecipientTargetBadgeVariant(summary.kind)}>
                                         {summary.name}: {summary.recipientCount}
                                         {summary.blockedCount > 0 ? ` · ${summary.blockedCount} abgemeldet` : ""}
                                     </Badge>

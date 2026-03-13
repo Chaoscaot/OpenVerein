@@ -6,7 +6,9 @@
         "dev": "next dev",
         "build": "next build",
         "start": "next start",
-        "lint": "eslint",
+        "fmt": "bunx prettier --write .",
+        "lint": "eslint .",
+        "typecheck": "tsc --noEmit",
         "email": "email dev"
     },
     "dependencies": {

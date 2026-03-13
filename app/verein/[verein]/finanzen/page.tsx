@@ -1,5 +1,6 @@
 "use client";
 
+import { KostenstellenDashboard } from "@/components/verein/kostenstellen/KostenstellenDashboard";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams, useRouter } from "next/navigation";
@@ -23,7 +24,14 @@ export default function FinanzenPage() {
     const kassen = useQuery(api.finanzen.getKassen, { vereinId });
     const totalBestand = useQuery(api.finanzen.getVereinFinanzen, { vereinId });
     const buchungen = useQuery(api.finanzen.getBuchungen, { vereinId });
+    const buchhaltungOverview = useQuery(api.finanzen.getBuchhaltungOverview, {
+        vereinId,
+    });
+    const kontenplan = useQuery(api.finanzen.getKontenplan, { vereinId });
     const buchungsUebersicht = useQuery(api.finanzen.getBeitragsBuchungsUebersicht, { vereinId });
+    const kostenstellenOverview = useQuery(api.kostenstellen.getOverview, {
+        vereinId,
+    });
     const mitglieder = useQuery(api.mitglieder.list, { vereinId });
     const beitragssaetze = useQuery(api.beitragssatz.list, { vereinId });
 
@@ -87,9 +95,23 @@ export default function FinanzenPage() {
         setUmbuchungBelegNummer("");
     };
 
-    if (kassen === undefined || totalBestand === undefined || buchungen === undefined || buchungsUebersicht === undefined || mitglieder === undefined || beitragssaetze === undefined) {
+    if (
+        kassen === undefined ||
+        totalBestand === undefined ||
+        buchungen === undefined ||
+        buchhaltungOverview === undefined ||
+        kontenplan === undefined ||
+        buchungsUebersicht === undefined ||
+        kostenstellenOverview === undefined ||
+        mitglieder === undefined ||
+        beitragssaetze === undefined
+    ) {
         return <div>Lade Finanzen...</div>;
     }
+
+    const ausgabenpunkteById = new Map(kostenstellenOverview.kostenstellen.flatMap((kostenstelle) => flattenPoints(kostenstelle.ausgabenpunkte)).map((point) => [point._id, point]));
+    const kostenstellenById = new Map(kostenstellenOverview.kostenstellen.map((kostenstelle) => [kostenstelle._id, kostenstelle]));
+    const kontenById = new Map(kontenplan.map((konto) => [konto._id, konto]));
 
     return (
         <>
@@ -109,8 +131,14 @@ export default function FinanzenPage() {
                 </div>
 
                 <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => router.push(`/verein/${vereinId}/finanzen/kostenstellen`)}>
+                        Kostenstellen
+                    </Button>
                     <Button variant="outline" onClick={() => router.push(`/verein/${vereinId}/finanzen/beitragssaetze`)}>
                         Beitragsverwaltung
+                    </Button>
+                    <Button variant="outline" onClick={() => router.push(`/verein/${vereinId}/finanzen/kontenplan`)}>
+                        SKR42-Kontenplan
                     </Button>
                     <Dialog open={isUmbuchungOpen} onOpenChange={setIsUmbuchungOpen}>
                         <DialogTrigger asChild>
@@ -196,7 +224,7 @@ export default function FinanzenPage() {
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="typ">Typ</Label>
-                                    <Select value={typ} onValueChange={(val: any) => setTyp(val)}>
+                                    <Select value={typ} onValueChange={(val: "barkasse" | "bankkonto" | "kreditkarte" | "paypal" | "sonstiges") => setTyp(val)}>
                                         <SelectTrigger id="typ">
                                             <SelectValue placeholder="Typ wählen" />
                                         </SelectTrigger>
@@ -236,6 +264,12 @@ export default function FinanzenPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                     <Card>
                         <CardHeader className="pb-2">
+                            <CardDescription>Kontenrahmen</CardDescription>
+                            <CardTitle>{buchhaltungOverview.kontenrahmen?.toUpperCase() ?? "Nicht aktiv"}</CardTitle>
+                        </CardHeader>
+                    </Card>
+                    <Card>
+                        <CardHeader className="pb-2">
                             <CardDescription>Buchungen gesamt</CardDescription>
                             <CardTitle>{buchungsUebersicht.gesamt}</CardTitle>
                         </CardHeader>
@@ -248,10 +282,23 @@ export default function FinanzenPage() {
                     </Card>
                     <Card>
                         <CardHeader className="pb-2">
-                            <CardDescription>Ohne Zuordnung</CardDescription>
-                            <CardTitle>{buchungsUebersicht.ohneZuordnung}</CardTitle>
+                            <CardDescription>Gemappte Finanzkonten</CardDescription>
+                            <CardTitle>
+                                {buchhaltungOverview.mappedKassen}/{buchhaltungOverview.kassenAnzahl}
+                            </CardTitle>
                         </CardHeader>
                     </Card>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <h3 className="text-xl font-bold tracking-tight">Kostenstellen-Dashboard</h3>
+                            <p className="text-sm text-muted-foreground">Behalte Projektbudgets, offene Zuordnungen und gefährdete Vorhaben direkt aus der Finanzübersicht im Blick.</p>
+                        </div>
+                        <Button onClick={() => router.push(`/verein/${vereinId}/finanzen/kostenstellen`)}>Kostenstellen verwalten</Button>
+                    </div>
+                    <KostenstellenDashboard dashboard={kostenstellenOverview.dashboard} waehrung={kostenstellenOverview.kostenstellen[0]?.waehrung ?? "EUR"} />
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -265,6 +312,11 @@ export default function FinanzenPage() {
                                 <div className="text-2xl font-bold">
                                     {kasse.aktuellerBestand.toFixed(2)} {kasse.waehrung}
                                 </div>
+                                {kasse.buchhaltungKontoId && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        SKR42: {kontenById.get(kasse.buchhaltungKontoId)?.nummer} · {kontenById.get(kasse.buchhaltungKontoId)?.name}
+                                    </p>
+                                )}
                                 {kasse.iban && <p className="text-xs text-muted-foreground mt-1">{kasse.iban}</p>}
                             </CardContent>
                             <CardFooter>
@@ -292,7 +344,9 @@ export default function FinanzenPage() {
                                 <TableHead>Datum</TableHead>
                                 <TableHead>Zweck</TableHead>
                                 <TableHead>Konto</TableHead>
+                                <TableHead>SKR42</TableHead>
                                 <TableHead>Zuordnung</TableHead>
+                                <TableHead>Kostenstelle</TableHead>
                                 <TableHead className="text-right">Betrag</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -301,7 +355,14 @@ export default function FinanzenPage() {
                                 const kasse = kassen.find((k) => k._id === buchung.kasseId);
                                 return (
                                     <TableRow key={buchung._id}>
-                                        <TableCell>{new Date(buchung.datum).toLocaleDateString()}</TableCell>
+                                        <TableCell>
+                                            {new Date(buchung.datum).toLocaleDateString()}
+                                            <TableCell>
+                                                {buchung.sollKontoId && buchung.habenKontoId
+                                                    ? `Soll ${kontenById.get(buchung.sollKontoId)?.nummer ?? "-"} / Haben ${kontenById.get(buchung.habenKontoId)?.nummer ?? "-"}`
+                                                    : "-"}
+                                            </TableCell>
+                                        </TableCell>
                                         <TableCell>{buchung.zweck}</TableCell>
                                         <TableCell>{kasse?.name || "Unbekannt"}</TableCell>
                                         <TableCell>
@@ -313,6 +374,11 @@ export default function FinanzenPage() {
                                                 .map((value) => ("vorname" in value! ? `${value.vorname} ${value.nachname}` : value!.name))
                                                 .join(" · ") || "-"}
                                         </TableCell>
+                                        <TableCell>
+                                            {buchung.kostenstelleId
+                                                ? `${kostenstellenById.get(buchung.kostenstelleId)?.name ?? "Unbekannt"}${buchung.ausgabenpunktId ? ` · ${ausgabenpunkteById.get(buchung.ausgabenpunktId)?.name ?? "Unbekannt"}` : ""}`
+                                                : "-"}
+                                        </TableCell>
                                         <TableCell className={`text-right font-medium ${buchung.betrag < 0 ? "text-red-500" : "text-green-500"}`}>
                                             {buchung.betrag > 0 ? "+" : ""}
                                             {buchung.betrag.toFixed(2)} {kasse?.waehrung || "EUR"}
@@ -322,7 +388,7 @@ export default function FinanzenPage() {
                             })}
                             {buchungen.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="h-24 text-center">
+                                    <TableCell colSpan={7} className="h-24 text-center">
                                         Keine Buchungen gefunden.
                                     </TableCell>
                                 </TableRow>
@@ -333,4 +399,8 @@ export default function FinanzenPage() {
             </div>
         </>
     );
+}
+
+function flattenPoints<T extends { children: T[] }>(points: T[]): T[] {
+    return points.flatMap((point) => [point, ...flattenPoints(point.children)]);
 }

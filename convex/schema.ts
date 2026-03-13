@@ -6,6 +6,13 @@ export default defineSchema({
         name: v.string(),
         owner: v.string(),
         logo: v.optional(v.string()),
+        buchhaltung: v.optional(
+            v.object({
+                kontenrahmen: v.literal("skr42"),
+                version: v.string(),
+                initializedAt: v.string(),
+            }),
+        ),
         address: v.object({
             street: v.string(),
             city: v.string(),
@@ -114,6 +121,38 @@ export default defineSchema({
         vereinId: v.id("verein"),
         name: v.string(),
     }).index("by_vereinId", ["vereinId"]),
+    aufgaben_liste: defineTable({
+        vereinId: v.id("verein"),
+        name: v.string(),
+        beschreibung: v.optional(v.string()),
+        createdAt: v.string(),
+        updatedAt: v.string(),
+        createdBy: v.string(),
+    }).index("by_vereinId", ["vereinId"]),
+    aufgaben_liste_mitglied: defineTable({
+        listeId: v.id("aufgaben_liste"),
+        vereinId: v.id("verein"),
+        mitgliedId: v.id("mitglied"),
+        rolle: v.union(v.literal("admin"), v.literal("bearbeiter"), v.literal("mitarbeiter")),
+    })
+        .index("by_listeId", ["listeId"])
+        .index("by_mitgliedId", ["mitgliedId"])
+        .index("by_vereinId_mitgliedId", ["vereinId", "mitgliedId"]),
+    aufgabe: defineTable({
+        vereinId: v.id("verein"),
+        listeId: v.id("aufgaben_liste"),
+        titel: v.string(),
+        beschreibung: v.optional(v.string()),
+        start: v.optional(v.string()),
+        ende: v.optional(v.string()),
+        abhaengigkeiten: v.array(v.id("aufgabe")),
+        zustaendige: v.array(v.id("mitglied")),
+        status: v.union(v.literal("offen"), v.literal("in_bearbeitung"), v.literal("blockiert"), v.literal("erledigt")),
+        createdAt: v.string(),
+        updatedAt: v.string(),
+    })
+        .index("by_listeId", ["listeId"])
+        .index("by_vereinId", ["vereinId"]),
     listen_eintrag: defineTable({
         listeId: v.id("mitglieder_liste"),
         mitgliedId: v.id("mitglied"),
@@ -163,6 +202,23 @@ export default defineSchema({
     })
         .index("by_token", ["token"])
         .index("by_mitgliedId", ["mitgliedId"]),
+    buchhaltung_konto: defineTable({
+        vereinId: v.id("verein"),
+        kontenrahmen: v.literal("skr42"),
+        nummer: v.string(),
+        name: v.string(),
+        typ: v.union(v.literal("asset"), v.literal("liability"), v.literal("income"), v.literal("expense")),
+        bereich: v.union(v.literal("bilanz"), v.literal("ideeller_bereich"), v.literal("vermoegensverwaltung"), v.literal("zweckbetrieb"), v.literal("wirtschaftlicher_geschaeftsbetrieb")),
+        beschreibung: v.optional(v.string()),
+        isLiquiditaetskonto: v.boolean(),
+        aktiv: v.boolean(),
+        standard: v.boolean(),
+        sortOrder: v.number(),
+        createdAt: v.string(),
+        updatedAt: v.string(),
+    })
+        .index("by_vereinId", ["vereinId"])
+        .index("by_vereinId_nummer", ["vereinId", "nummer"]),
     kasse: defineTable({
         vereinId: v.id("verein"),
         name: v.string(),
@@ -173,8 +229,36 @@ export default defineSchema({
         anfangsbestand: v.number(),
         aktuellerBestand: v.number(),
         beschreibung: v.optional(v.string()),
+        buchhaltungKontoId: v.optional(v.id("buchhaltung_konto")),
         aktiv: v.boolean(),
     }).index("by_vereinId", ["vereinId"]),
+
+    kostenstelle: defineTable({
+        vereinId: v.id("verein"),
+        name: v.string(),
+        budget: v.number(),
+        waehrung: v.string(),
+        beschreibung: v.optional(v.string()),
+        startDatum: v.optional(v.string()),
+        endDatum: v.optional(v.string()),
+        aktiv: v.boolean(),
+        createdAt: v.string(),
+        updatedAt: v.string(),
+    }).index("by_vereinId", ["vereinId"]),
+
+    kostenstelle_ausgabenpunkt: defineTable({
+        vereinId: v.id("verein"),
+        kostenstelleId: v.id("kostenstelle"),
+        parentId: v.optional(v.id("kostenstelle_ausgabenpunkt")),
+        name: v.string(),
+        budget: v.number(),
+        beschreibung: v.optional(v.string()),
+        sortOrder: v.number(),
+        createdAt: v.string(),
+        updatedAt: v.string(),
+    })
+        .index("by_vereinId", ["vereinId"])
+        .index("by_kostenstelleId", ["kostenstelleId"]),
 
     kassen_buchung: defineTable({
         kasseId: v.id("kasse"),
@@ -186,10 +270,18 @@ export default defineSchema({
         belegNummer: v.optional(v.string()),
         beitragsSatzId: v.optional(v.id("beitrags_satz")),
         mitgliedId: v.optional(v.id("mitglied")), // If related to a member
+        gegenkontoId: v.optional(v.id("buchhaltung_konto")),
+        sollKontoId: v.optional(v.id("buchhaltung_konto")),
+        habenKontoId: v.optional(v.id("buchhaltung_konto")),
+        kostenstelleId: v.optional(v.id("kostenstelle")),
+        ausgabenpunktId: v.optional(v.id("kostenstelle_ausgabenpunkt")),
     })
         .index("by_kasseId", ["kasseId"])
         .index("by_beitragsSatzId", ["beitragsSatzId"])
         .index("by_mitgliedId", ["mitgliedId"])
+        .index("by_gegenkontoId", ["gegenkontoId"])
+        .index("by_kostenstelleId", ["kostenstelleId"])
+        .index("by_ausgabenpunktId", ["ausgabenpunktId"])
         .index("by_vereinId", ["vereinId", "datum"]),
     buchung_rechnung: defineTable({
         buchungId: v.id("kassen_buchung"),

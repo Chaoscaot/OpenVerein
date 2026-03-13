@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert02Icon, ArrowRight01Icon, CheckmarkCircle02Icon, CreditCard, FileText, Mail, Person, Settings, Shield } from "@hugeicons/core-free-icons";
+import { Alert02Icon, ArrowRight01Icon, CheckmarkCircle02Icon, CheckmarkSquare02Icon, CreditCard, FileText, Mail, Person, Settings, Shield } from "@hugeicons/core-free-icons";
 import { SiteHeader } from "@/components/verein/nav/SiteHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { fetchAuthQuery } from "@/lib/auth-server";
+import { buildCelebrationPreview, buildFinanceOverviewSummary, buildMemberStatGroups } from "@/lib/verein-dashboard";
+import { VereinDashboardHighlights } from "@/components/verein/dashboard/VereinDashboardHighlights";
 
 function formatCurrency(value: number, currency: string) {
     return new Intl.NumberFormat("de-DE", {
@@ -32,7 +34,9 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
     const { verein } = await params;
     const vereinId = verein as Id<"verein">;
 
-    const acl = await fetchAuthQuery(api.permissions.getMyPermissions, { vereinId });
+    const acl = await fetchAuthQuery(api.permissions.getMyPermissions, {
+        vereinId,
+    });
     const permissionSet = new Set(acl.permissions);
 
     const canVereinView = permissionSet.has("verein.view");
@@ -54,6 +58,9 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
     const buchungen = canBuchungView ? await fetchAuthQuery(api.finanzen.getBuchungen, { vereinId }) : [];
     const beitragssaetze = canBeitragView ? await fetchAuthQuery(api.beitragssatz.list, { vereinId }) : [];
     const rollen = canRollenView ? await fetchAuthQuery(api.rollen.list, { vereinId }) : [];
+    const aufgabenOverview = await fetchAuthQuery(api.aufgaben.overview, {
+        vereinId,
+    });
 
     const totalMembers = mitglieder.length;
     const activeMembers = mitglieder.filter((mitglied) => mitglied.typ === "mitglied" || mitglied.typ === "fördermitglied").length;
@@ -66,11 +73,28 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
     const primaryCurrency = currencies[0] ?? "EUR";
     const latestBooking = buchungen[0] ?? null;
 
-    const addressSummary = vereinData
-        ? formatAddress(vereinData.address.city, vereinData.address.postalCode, vereinData.address.country)
-        : null;
+    const addressSummary = vereinData ? formatAddress(vereinData.address.city, vereinData.address.postalCode, vereinData.address.country) : null;
 
     const workspaces = [
+        {
+            title: "Aufgaben",
+            description: "Listen, Zuständigkeiten und Abhängigkeiten für Vereinsarbeit transparent koordinieren.",
+            href: `/verein/${verein}/aufgaben`,
+            icon: CheckmarkSquare02Icon,
+            visible: aufgabenOverview.canOpenModule,
+            eyebrow:
+                aufgabenOverview.totalOpenTasks > 0
+                    ? `${aufgabenOverview.totalOpenTasks} offene Aufgaben`
+                    : aufgabenOverview.canCreateLists
+                      ? "Bereit für die erste Aufgabenliste"
+                      : "Noch keine offenen Aufgaben",
+            meta:
+                aufgabenOverview.assignedOpenTasks > 0
+                    ? `${aufgabenOverview.assignedOpenTasks} dir aktuell zugewiesen`
+                    : aufgabenOverview.totalAccessibleLists > 0
+                      ? `${aufgabenOverview.totalAccessibleLists} Aufgabenlisten sichtbar`
+                      : "Erste Aufgabenliste anlegen",
+        },
         {
             title: "Mitglieder",
             description: "Stammdaten, Status und Kontaktinformationen an einem Ort pflegen.",
@@ -137,18 +161,14 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
         },
     ].filter((workspace) => workspace.visible);
 
-    const primaryAction =
-        workspaces.find((workspace) => workspace.title === "Mitglieder") ??
-        workspaces.find((workspace) => workspace.title === "Finanzen") ??
-        workspaces[0] ??
-        null;
+    const primaryAction = workspaces.find((workspace) => workspace.title === "Mitglieder") ?? workspaces.find((workspace) => workspace.title === "Finanzen") ?? workspaces[0] ?? null;
 
     const secondaryAction = canSettingsView
         ? {
               title: "Einstellungen",
               href: `/verein/${verein}/settings`,
           }
-        : workspaces[1] ?? null;
+        : (workspaces[1] ?? null);
     const resolvedSecondaryAction = secondaryAction && secondaryAction.href !== primaryAction?.href ? secondaryAction : null;
 
     const summaryCards = [
@@ -246,6 +266,112 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
             : null,
     ].filter((item): item is { label: string; href: string } => item !== null);
 
+    const memberGroups = canMitgliederView
+        ? buildMemberStatGroups(
+              mitglieder.map((mitglied) => ({
+                  _id: mitglied._id,
+                  vorname: mitglied.vorname,
+                  nachname: mitglied.nachname,
+                  geburtsdatum: mitglied.geburtsdatum,
+                  beitrittsdatum: mitglied.beitrittsdatum,
+                  typ: mitglied.typ,
+                  userId: mitglied.userId,
+                  rollen: mitglied.rollen,
+                  beitragsEinzug: mitglied.beitragsEinzug,
+                  beitragsSatzId: mitglied.beitragsSatzId,
+              })),
+              rollen.map((rolle) => ({
+                  _id: rolle._id,
+                  name: rolle.name,
+              })),
+          )
+        : [];
+
+    const financeSummary =
+        canFinanzenView || canKassenView || canBuchungView
+            ? buildFinanceOverviewSummary({
+                  members: mitglieder.map((mitglied) => ({
+                      _id: mitglied._id,
+                      vorname: mitglied.vorname,
+                      nachname: mitglied.nachname,
+                      geburtsdatum: mitglied.geburtsdatum,
+                      beitrittsdatum: mitglied.beitrittsdatum,
+                      typ: mitglied.typ,
+                      userId: mitglied.userId,
+                      rollen: mitglied.rollen,
+                      beitragsEinzug: mitglied.beitragsEinzug,
+                      beitragsSatzId: mitglied.beitragsSatzId,
+                  })),
+                  beitragssaetze: beitragssaetze.map((satz) => ({
+                      _id: satz._id,
+                      betrag: satz.betrag,
+                      waehrung: satz.waehrung,
+                  })),
+                  kassen: kassen.map((kasse) => ({
+                      _id: kasse._id,
+                      name: kasse.name,
+                      typ: kasse.typ,
+                      waehrung: kasse.waehrung,
+                      aktuellerBestand: kasse.aktuellerBestand,
+                      aktiv: kasse.aktiv,
+                  })),
+                  buchungen: buchungen.map((buchung) => ({
+                      _id: buchung._id,
+                      kasseId: buchung.kasseId,
+                      betrag: buchung.betrag,
+                      datum: buchung.datum,
+                      zweck: buchung.zweck,
+                  })),
+                  fallbackCurrency: primaryCurrency,
+              })
+            : null;
+
+    const celebrationPreview = canMitgliederView
+        ? buildCelebrationPreview(
+              mitglieder.map((mitglied) => ({
+                  _id: mitglied._id,
+                  vorname: mitglied.vorname,
+                  nachname: mitglied.nachname,
+                  geburtsdatum: mitglied.geburtsdatum,
+                  beitrittsdatum: mitglied.beitrittsdatum,
+                  typ: mitglied.typ,
+                  userId: mitglied.userId,
+                  rollen: mitglied.rollen,
+                  beitragsEinzug: mitglied.beitragsEinzug,
+                  beitragsSatzId: mitglied.beitragsSatzId,
+              })),
+              verein,
+          )
+        : { birthdays: [], anniversaries: [] };
+
+    const buchungenByKasse = new Map<string, typeof buchungen>();
+    for (const buchung of buchungen) {
+        const existing = buchungenByKasse.get(buchung.kasseId) ?? [];
+        existing.push(buchung);
+        buchungenByKasse.set(buchung.kasseId, existing);
+    }
+
+    const invoiceUploadData = {
+        fallbackHref: `/verein/${verein}/finanzen`,
+        kassen: kassen
+            .map((kasse) => ({
+                id: kasse._id,
+                name: kasse.name,
+                currency: kasse.waehrung,
+                bookings: (buchungenByKasse.get(kasse._id) ?? []).slice(0, 20).map((buchung) => ({
+                    id: buchung._id,
+                    date: buchung.datum,
+                    purpose: buchung.zweck,
+                    amount: buchung.betrag,
+                    currency: kasse.waehrung,
+                    href: `/verein/${verein}/finanzen/${kasse._id}/rechnungen/${buchung._id}`,
+                })),
+            }))
+            .filter((kasse) => kasse.bookings.length > 0),
+    };
+
+    const preferredKasse = kassen.find((kasse) => kasse.aktiv) ?? kassen[0] ?? null;
+
     return (
         <>
             <SiteHeader title="Vereinsübersicht" />
@@ -303,6 +429,19 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
                     </div>
                 </section>
 
+                <VereinDashboardHighlights
+                    canViewMembers={canMitgliederView}
+                    canViewFinance={canFinanzenView || canKassenView || canBuchungView}
+                    memberGroups={memberGroups}
+                    finance={financeSummary}
+                    invoiceUpload={invoiceUploadData}
+                    celebrations={celebrationPreview}
+                    financeActions={{
+                        newExpenseHref: preferredKasse ? `/verein/${verein}/finanzen/${preferredKasse._id}?create=ausgabe` : null,
+                        newInvoiceHref: `/verein/${verein}#e-rechnung-upload`,
+                    }}
+                />
+
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
                     <Card className="rounded-[2rem]">
                         <CardHeader>
@@ -354,12 +493,68 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
                     <div className="space-y-6">
                         <Card className="rounded-[2rem]">
                             <CardHeader>
+                                <CardTitle>Anstehende Aufgaben</CardTitle>
+                                <CardDescription>Deine nächsten Aufgaben mit Termin aus allen sichtbaren Listen.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {aufgabenOverview.canOpenModule ? (
+                                    aufgabenOverview.upcomingMine.length === 0 ? (
+                                        <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Aktuell sind dir keine termingebundenen Aufgaben zugeordnet.</div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {aufgabenOverview.upcomingMine.map((task) => (
+                                                <div key={task._id} className="rounded-2xl border p-4 space-y-2">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div>
+                                                            <p className="font-medium">{task.titel}</p>
+                                                            <p className="text-sm text-muted-foreground">{task.listeName}</p>
+                                                        </div>
+                                                        <Badge
+                                                            variant={
+                                                                task.status === "erledigt"
+                                                                    ? "secondary"
+                                                                    : task.status === "blockiert"
+                                                                      ? "destructive"
+                                                                      : task.status === "in_bearbeitung"
+                                                                        ? "default"
+                                                                        : "outline"
+                                                            }
+                                                        >
+                                                            {task.status === "offen"
+                                                                ? "Offen"
+                                                                : task.status === "in_bearbeitung"
+                                                                  ? "In Bearbeitung"
+                                                                  : task.status === "blockiert"
+                                                                    ? "Blockiert"
+                                                                    : "Erledigt"}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {task.ende ? `Fällig am ${formatDate(task.ende)}` : task.start ? `Start am ${formatDate(task.start)}` : "Ohne Termin"}
+                                                    </p>
+                                                    <Button asChild size="sm" variant="outline">
+                                                        <Link href={`/verein/${verein}/aufgaben`}>Aufgaben öffnen</Link>
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Das Aufgabenmodul ist für dieses Konto noch nicht freigeschaltet.</div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        <Card className="rounded-[2rem]">
+                            <CardHeader>
                                 <CardTitle>Nächste Schritte</CardTitle>
                                 <CardDescription>Offene Basics, die den Verein alltagstauglich machen.</CardDescription>
                             </CardHeader>
                             <CardContent>
                                 {setupActions.length === 0 ? (
-                                    <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Aktuell sind keine offensichtlichen Setup-Lücken auf dieser Ebene erkennbar.</div>
+                                    <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                                        Aktuell sind keine offensichtlichen Setup-Lücken auf dieser Ebene erkennbar.
+                                    </div>
                                 ) : (
                                     <div className="space-y-3">
                                         {setupActions.map((action) => (
@@ -385,7 +580,9 @@ export default async function VereinPage({ params }: { params: Promise<{ verein:
                             </CardHeader>
                             <CardContent>
                                 {profileChecks.length === 0 ? (
-                                    <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Keine Profildaten sichtbar, weil für dieses Konto kein Vereinszugriff freigeschaltet ist.</div>
+                                    <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                                        Keine Profildaten sichtbar, weil für dieses Konto kein Vereinszugriff freigeschaltet ist.
+                                    </div>
                                 ) : (
                                     <div className="space-y-3">
                                         {profileChecks.map((item) => (

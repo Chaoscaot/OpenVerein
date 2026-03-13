@@ -19,7 +19,7 @@ import { getToken } from "@/lib/auth-server";
 import { Id } from "@/convex/_generated/dataModel";
 import { UserComponent } from "@/components/UserComponent";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronRight, DashboardBrowsingIcon, Person, Settings, Coins } from "@hugeicons/core-free-icons";
+import { ChevronRight, DashboardBrowsingIcon, Person, Settings, Coins, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
 
@@ -27,6 +27,7 @@ export async function AppSidebar({ id }: { id: string }) {
     const token = await getToken();
     const activeVerein = await fetchQuery(api.verein.get, { id: id as Id<"verein"> }, { token });
     const acl = await fetchQuery(api.permissions.getMyPermissions, { vereinId: id as Id<"verein"> }, { token });
+    const aufgabenOverview = await fetchQuery(api.aufgaben.overview, { vereinId: id as Id<"verein"> }, { token });
     const permissionSet = new Set(acl.permissions);
 
     const canDashboard = permissionSet.has("dashboard.view") || permissionSet.has("verein.view");
@@ -36,11 +37,14 @@ export async function AppSidebar({ id }: { id: string }) {
     const canCommunication = permissionSet.has("liste.view") || permissionSet.has("liste.manage") || permissionSet.has("mail.send");
     const canListenManagement = permissionSet.has("liste.view") || permissionSet.has("liste.manage") || permissionSet.has("mitglied.view");
     const canMailVersand = permissionSet.has("mail.send");
-    const canFinanzenSection = permissionSet.has("finanzen.view") || permissionSet.has("kasse.view") || permissionSet.has("buchung.view") || permissionSet.has("beitragssatz.view");
+    const canFinanzenSection =
+        permissionSet.has("finanzen.view") || permissionSet.has("kostenstelle.view") || permissionSet.has("kasse.view") || permissionSet.has("buchung.view") || permissionSet.has("beitragssatz.view");
+    const canKostenstellen = permissionSet.has("kostenstelle.view");
     const canKassen = permissionSet.has("kasse.view") || permissionSet.has("buchung.view");
     const canBeitragssaetze = permissionSet.has("beitragssatz.view");
     const canRollen = permissionSet.has("rolle.view") || permissionSet.has("rolle.manage");
     const canSettings = permissionSet.has("settings.view");
+    const canAufgaben = aufgabenOverview.canOpenModule;
 
     return (
         <Sidebar collapsible="icon" className="border-r-0!" variant="inset">
@@ -133,6 +137,15 @@ export async function AppSidebar({ id }: { id: string }) {
                                     </CollapsibleTrigger>
                                     <CollapsibleContent>
                                         <SidebarMenuSub>
+                                            {canKostenstellen && (
+                                                <SidebarMenuSubItem>
+                                                    <SidebarMenuSubButton asChild>
+                                                        <Link href={`/verein/${id}/finanzen/kostenstellen`}>
+                                                            <span>Kostenstellen</span>
+                                                        </Link>
+                                                    </SidebarMenuSubButton>
+                                                </SidebarMenuSubItem>
+                                            )}
                                             {canKassen && (
                                                 <SidebarMenuSubItem>
                                                     <SidebarMenuSubButton asChild>
@@ -155,6 +168,14 @@ export async function AppSidebar({ id }: { id: string }) {
                                     </CollapsibleContent>
                                 </SidebarMenuItem>
                             </Collapsible>
+                        )}
+                        {canAufgaben && (
+                            <Link href={`/verein/${id}/aufgaben`}>
+                                <SidebarMenuButton tooltip={"Aufgaben"}>
+                                    <HugeiconsIcon icon={CheckmarkCircle02Icon} />
+                                    <span>Aufgaben</span>
+                                </SidebarMenuButton>
+                            </Link>
                         )}
                         {canSettings && (
                             <Link href={`/verein/${id}/settings`}>

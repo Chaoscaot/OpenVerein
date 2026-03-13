@@ -1,3 +1,3 @@
 export default function ModalCatchAllPage() {
-    return null;
+  return null;
 }

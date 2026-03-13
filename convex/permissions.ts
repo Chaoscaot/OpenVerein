@@ -45,6 +45,10 @@ const PERMISSION_GROUPS = [
         label: "Finanzen",
         permissions: [
             { key: "finanzen.view", label: "Finanzübersicht sehen" },
+            { key: "kostenstelle.view", label: "Kostenstellen sehen" },
+            { key: "kostenstelle.create", label: "Kostenstelle anlegen" },
+            { key: "kostenstelle.edit", label: "Kostenstelle bearbeiten" },
+            { key: "kostenstelle.delete", label: "Kostenstelle löschen" },
             { key: "kasse.view", label: "Kassen sehen" },
             { key: "kasse.create", label: "Kasse anlegen" },
             { key: "kasse.edit", label: "Kasse bearbeiten" },

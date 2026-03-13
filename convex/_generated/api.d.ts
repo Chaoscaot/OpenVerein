@@ -8,11 +8,14 @@
  * @module
  */
 
+import type * as aufgaben from "../aufgaben.js";
 import type * as auth from "../auth.js";
 import type * as beitragssatz from "../beitragssatz.js";
 import type * as files from "../files.js";
 import type * as finanzen from "../finanzen.js";
 import type * as http from "../http.js";
+import type * as kostenstellen from "../kostenstellen.js";
+import type * as kostenstellenUtils from "../kostenstellenUtils.js";
 import type * as listen from "../listen.js";
 import type * as mitglieder from "../mitglieder.js";
 import type * as permissions from "../permissions.js";
@@ -29,11 +32,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  aufgaben: typeof aufgaben;
   auth: typeof auth;
   beitragssatz: typeof beitragssatz;
   files: typeof files;
   finanzen: typeof finanzen;
   http: typeof http;
+  kostenstellen: typeof kostenstellen;
+  kostenstellenUtils: typeof kostenstellenUtils;
   listen: typeof listen;
   mitglieder: typeof mitglieder;
   permissions: typeof permissions;

@@ -33,6 +33,7 @@ const MAIL_SEND_PERMISSIONS: Permission[] = ["mail.send"];
 
 type ReadCtx = QueryCtx | MutationCtx;
 type SystemListKey = (typeof SYSTEM_LISTS)[number]["key"];
+type RecipientTargetKind = "list" | "role" | "member";
 
 type MitgliedSummary = {
     _id: Id<"mitglied">;
@@ -42,12 +43,35 @@ type MitgliedSummary = {
     typ: Doc<"mitglied">["typ"];
 };
 
+type RecipientTargetSummary = {
+    key: string;
+    name: string;
+    kind: RecipientTargetKind;
+    recipientCount: number;
+    blockedCount: number;
+};
+
+type ResolvedRecipientTarget = {
+    key: string;
+    name: string;
+    kind: RecipientTargetKind;
+    members: Doc<"mitglied">[];
+};
+
 function toListKey(listId: Id<"mitglieder_liste">) {
     return `custom:${listId}`;
 }
 
 function toSystemListKey(key: SystemListKey) {
     return `system:${key}`;
+}
+
+function toRoleKey(roleId: Id<"vereins_rollen">) {
+    return `role:${roleId}`;
+}
+
+function toMemberKey(memberId: Id<"mitglied">) {
+    return `member:${memberId}`;
 }
 
 function trimAndNormalize(value: string) {
@@ -132,9 +156,50 @@ function matchesSystemList(key: SystemListKey, mitglied: Doc<"mitglied">, vorsta
     }
 }
 
-async function resolveSystemMembers(ctx: ReadCtx, vereinId: Id<"verein">, key: SystemListKey) {
-    const [mitglieder, vorstandRollenIds] = await Promise.all([loadMitglieder(ctx, vereinId), loadVorstandRollenIds(ctx, vereinId)]);
-    return mitglieder.filter((mitglied) => matchesSystemList(key, mitglied, vorstandRollenIds));
+async function resolveSystemMembers(ctx: ReadCtx, vereinId: Id<"verein">, key: SystemListKey, mitglieder?: Doc<"mitglied">[], vorstandRollenIds?: ReadonlySet<Id<"vereins_rollen">>) {
+    const resolvedMitglieder = mitglieder ?? (await loadMitglieder(ctx, vereinId));
+    const resolvedVorstandRollenIds = vorstandRollenIds ?? (await loadVorstandRollenIds(ctx, vereinId));
+
+    return resolvedMitglieder.filter((mitglied) => matchesSystemList(key, mitglied, resolvedVorstandRollenIds));
+}
+
+async function loadListOverviewEntries(ctx: ReadCtx, vereinId: Id<"verein">) {
+    const [mitglieder, vorstandRollenIds, customLists] = await Promise.all([
+        loadMitglieder(ctx, vereinId),
+        loadVorstandRollenIds(ctx, vereinId),
+        ctx.db
+            .query("mitglieder_liste")
+            .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
+            .collect(),
+    ]);
+
+    const systemLists = SYSTEM_LISTS.map((definition) => ({
+        key: toSystemListKey(definition.key),
+        name: definition.name,
+        description: definition.description,
+        kind: "system" as const,
+        memberCount: mitglieder.filter((mitglied) => matchesSystemList(definition.key, mitglied, vorstandRollenIds)).length,
+    }));
+
+    const customListSummaries = await Promise.all(
+        customLists.map(async (liste) => {
+            const eintraege = await ctx.db
+                .query("listen_eintrag")
+                .withIndex("by_listeId", (q) => q.eq("listeId", liste._id))
+                .collect();
+
+            return {
+                key: toListKey(liste._id),
+                name: liste.name,
+                description: "Benutzerdefinierte Liste",
+                kind: "custom" as const,
+                memberCount: eintraege.length,
+                listId: liste._id,
+            };
+        }),
+    );
+
+    return [...systemLists, ...customListSummaries].sort((left, right) => left.name.localeCompare(right.name, "de"));
 }
 
 async function ensureUniqueListName(ctx: MutationCtx, vereinId: Id<"verein">, name: string, excludeId?: Id<"mitglieder_liste">) {
@@ -189,7 +254,16 @@ async function loadCustomListMembers(ctx: ReadCtx, vereinId: Id<"verein">, listI
     };
 }
 
-async function resolveMembersForListKey(ctx: ReadCtx, vereinId: Id<"verein">, listKey: string) {
+async function resolveMembersForListKey(
+    ctx: ReadCtx,
+    vereinId: Id<"verein">,
+    listKey: string,
+    options?: {
+        mitglieder?: Doc<"mitglied">[];
+        memberById?: Map<Id<"mitglied">, Doc<"mitglied">>;
+        vorstandRollenIds?: ReadonlySet<Id<"vereins_rollen">>;
+    },
+) {
     if (listKey.startsWith("system:")) {
         const systemKey = listKey.slice("system:".length) as SystemListKey;
         const definition = SYSTEM_LISTS.find((liste) => liste.key === systemKey);
@@ -200,7 +274,7 @@ async function resolveMembersForListKey(ctx: ReadCtx, vereinId: Id<"verein">, li
         return {
             key: listKey,
             name: definition.name,
-            members: await resolveSystemMembers(ctx, vereinId, systemKey),
+            members: await resolveSystemMembers(ctx, vereinId, systemKey, options?.mitglieder, options?.vorstandRollenIds),
         };
     }
 
@@ -217,6 +291,143 @@ async function resolveMembersForListKey(ctx: ReadCtx, vereinId: Id<"verein">, li
     throw new Error("Ungültiger Listenschlüssel");
 }
 
+async function resolveRecipientTarget(
+    ctx: ReadCtx,
+    vereinId: Id<"verein">,
+    targetKey: string,
+    options?: {
+        mitglieder?: Doc<"mitglied">[];
+        memberById?: Map<Id<"mitglied">, Doc<"mitglied">>;
+        vorstandRollenIds?: ReadonlySet<Id<"vereins_rollen">>;
+        roleById?: Map<Id<"vereins_rollen">, Doc<"vereins_rollen">>;
+    },
+): Promise<ResolvedRecipientTarget> {
+    if (targetKey.startsWith("system:") || targetKey.startsWith("custom:")) {
+        const resolvedList = await resolveMembersForListKey(ctx, vereinId, targetKey, options);
+
+        return {
+            ...resolvedList,
+            kind: "list",
+        };
+    }
+
+    if (targetKey.startsWith("role:")) {
+        const roleId = targetKey.slice("role:".length) as Id<"vereins_rollen">;
+        const rolle = options?.roleById?.get(roleId) ?? (await ctx.db.get(roleId));
+        if (!rolle || rolle.vereinId !== vereinId) {
+            throw new Error("Rolle nicht gefunden");
+        }
+
+        const mitglieder = options?.mitglieder ?? (await loadMitglieder(ctx, vereinId));
+        return {
+            key: targetKey,
+            name: rolle.name,
+            kind: "role",
+            members: mitglieder.filter((mitglied) => mitglied.rollen.includes(roleId)),
+        };
+    }
+
+    if (targetKey.startsWith("member:")) {
+        const memberId = targetKey.slice("member:".length) as Id<"mitglied">;
+        const mitglied = options?.memberById?.get(memberId) ?? (await ctx.db.get(memberId));
+        if (!mitglied || mitglied.vereinId !== vereinId) {
+            throw new Error("Person nicht gefunden");
+        }
+
+        return {
+            key: targetKey,
+            name: `${mitglied.vorname} ${mitglied.nachname}`.trim(),
+            kind: "member",
+            members: [mitglied],
+        };
+    }
+
+    throw new Error("Ungültiges Empfängerziel");
+}
+
+async function collectRecipientsForTargetKeys(ctx: ReadCtx, vereinId: Id<"verein">, targetKeys: string[]) {
+    const uniqueTargetKeys = Array.from(new Set(targetKeys));
+    if (uniqueTargetKeys.length === 0) {
+        return {
+            targetKeys: uniqueTargetKeys,
+            targetNames: [] as string[],
+            targetSummaries: [] as RecipientTargetSummary[],
+            recipients: [] as MitgliedSummary[],
+            recipientEmails: [] as string[],
+            recipientCount: 0,
+            blockedCount: 0,
+        };
+    }
+
+    const needsMitglieder = uniqueTargetKeys.some((targetKey) => targetKey.startsWith("system:") || targetKey.startsWith("role:") || targetKey.startsWith("member:"));
+    const needsRollen = uniqueTargetKeys.some((targetKey) => targetKey.startsWith("role:"));
+    const needsVorstandRollen = uniqueTargetKeys.some((targetKey) => targetKey.startsWith("system:"));
+
+    const [mitglieder, rollen, vorstandRollenIds] = await Promise.all([
+        needsMitglieder ? loadMitglieder(ctx, vereinId) : Promise.resolve([]),
+        needsRollen
+            ? ctx.db
+                  .query("vereins_rollen")
+                  .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
+                  .collect()
+            : Promise.resolve([]),
+        needsVorstandRollen ? loadVorstandRollenIds(ctx, vereinId) : Promise.resolve(new Set<Id<"vereins_rollen">>()),
+    ]);
+
+    const memberById = new Map(mitglieder.map((mitglied) => [mitglied._id, mitglied]));
+    const roleById = new Map(rollen.map((rolle) => [rolle._id, rolle]));
+    const recipientsByEmail = new Map<string, MitgliedSummary>();
+    const blockedEmails = new Set<string>();
+    const targetNames: string[] = [];
+    const targetSummaries: RecipientTargetSummary[] = [];
+
+    for (const targetKey of uniqueTargetKeys) {
+        const { name, kind, members } = await resolveRecipientTarget(ctx, vereinId, targetKey, {
+            mitglieder,
+            memberById,
+            vorstandRollenIds,
+            roleById,
+        });
+
+        targetNames.push(name);
+
+        const membersWithEmail = members.filter((mitglied) => trimAndNormalize(mitglied.kontakt.email).length > 0);
+        const sendableMembers = membersWithEmail.filter((mitglied) => allowsListenEmails(mitglied));
+        const blockedMembers = membersWithEmail.filter((mitglied) => !allowsListenEmails(mitglied));
+
+        targetSummaries.push({
+            key: targetKey,
+            name,
+            kind,
+            recipientCount: sendableMembers.length,
+            blockedCount: blockedMembers.length,
+        });
+
+        for (const member of blockedMembers) {
+            blockedEmails.add(member.kontakt.email.trim().toLowerCase());
+        }
+
+        for (const member of sendableMembers) {
+            const email = member.kontakt.email.trim().toLowerCase();
+            if (!recipientsByEmail.has(email)) {
+                recipientsByEmail.set(email, toMitgliedSummary(member));
+            }
+        }
+    }
+
+    const recipients = Array.from(recipientsByEmail.values()).sort((left, right) => `${left.nachname} ${left.vorname}`.localeCompare(`${right.nachname} ${right.vorname}`, "de"));
+
+    return {
+        targetKeys: uniqueTargetKeys,
+        targetNames,
+        targetSummaries,
+        recipients,
+        recipientEmails: recipients.map((recipient) => recipient.email),
+        recipientCount: recipients.length,
+        blockedCount: blockedEmails.size,
+    };
+}
+
 export const overview = query({
     args: {
         vereinId: v.id("verein"),
@@ -224,42 +435,64 @@ export const overview = query({
     handler: async (ctx, { vereinId }) => {
         await requireAnyPermission(ctx, vereinId, LIST_READ_PERMISSIONS);
 
-        const [mitglieder, vorstandRollenIds, customLists] = await Promise.all([
-            loadMitglieder(ctx, vereinId),
-            loadVorstandRollenIds(ctx, vereinId),
+        return await loadListOverviewEntries(ctx, vereinId);
+    },
+});
+
+export const recipientTargets = query({
+    args: {
+        vereinId: v.id("verein"),
+    },
+    handler: async (ctx, { vereinId }) => {
+        await requireAnyPermission(ctx, vereinId, [...LIST_READ_PERMISSIONS, ...MAIL_SEND_PERMISSIONS]);
+
+        const [listEntries, rollen, mitglieder] = await Promise.all([
+            loadListOverviewEntries(ctx, vereinId),
             ctx.db
-                .query("mitglieder_liste")
+                .query("vereins_rollen")
                 .withIndex("by_vereinId", (q) => q.eq("vereinId", vereinId))
                 .collect(),
+            loadMitglieder(ctx, vereinId),
         ]);
 
-        const systemLists = SYSTEM_LISTS.map((definition) => ({
-            key: toSystemListKey(definition.key),
-            name: definition.name,
-            description: definition.description,
-            kind: "system" as const,
-            memberCount: mitglieder.filter((mitglied) => matchesSystemList(definition.key, mitglied, vorstandRollenIds)).length,
-        }));
-
-        const customListSummaries = await Promise.all(
-            customLists.map(async (liste) => {
-                const eintraege = await ctx.db
-                    .query("listen_eintrag")
-                    .withIndex("by_listeId", (q) => q.eq("listeId", liste._id))
-                    .collect();
+        const roleTargets = rollen
+            .map((rolle) => {
+                const membersWithEmail = mitglieder.filter((mitglied) => mitglied.rollen.includes(rolle._id) && trimAndNormalize(mitglied.kontakt.email).length > 0);
+                const blockedCount = membersWithEmail.filter((mitglied) => !allowsListenEmails(mitglied)).length;
 
                 return {
-                    key: toListKey(liste._id),
-                    name: liste.name,
-                    description: "Benutzerdefinierte Liste",
-                    kind: "custom" as const,
-                    memberCount: eintraege.length,
-                    listId: liste._id,
+                    key: toRoleKey(rolle._id),
+                    name: rolle.name,
+                    description: blockedCount > 0 ? `${membersWithEmail.length - blockedCount} erreichbar · ${blockedCount} abgemeldet` : `${membersWithEmail.length} erreichbare Personen`,
+                    kind: "role" as const,
+                    recipientCount: membersWithEmail.length - blockedCount,
+                    blockedCount,
                 };
-            }),
-        );
+            })
+            .sort((left, right) => left.name.localeCompare(right.name, "de"));
 
-        return [...systemLists, ...customListSummaries].sort((left, right) => left.name.localeCompare(right.name, "de"));
+        const memberTargets = mitglieder
+            .filter((mitglied) => trimAndNormalize(mitglied.kontakt.email).length > 0)
+            .map((mitglied) => ({
+                key: toMemberKey(mitglied._id),
+                name: `${mitglied.vorname} ${mitglied.nachname}`.trim(),
+                description: allowsListenEmails(mitglied) ? mitglied.kontakt.email.trim() : `${mitglied.kontakt.email.trim()} · abgemeldet`,
+                kind: "member" as const,
+                recipientCount: allowsListenEmails(mitglied) ? 1 : 0,
+                blockedCount: allowsListenEmails(mitglied) ? 0 : 1,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name, "de"));
+
+        const listTargets = listEntries.map((entry) => ({
+            key: entry.key,
+            name: entry.name,
+            description: entry.memberCount === 1 ? `${entry.description} · 1 Person` : `${entry.description} · ${entry.memberCount} Personen`,
+            kind: "list" as const,
+            recipientCount: entry.memberCount,
+            blockedCount: 0,
+        }));
+
+        return [...listTargets, ...roleTargets, ...memberTargets];
     },
 });
 
@@ -420,57 +653,18 @@ export const remove = mutation({
 export const previewRecipients = query({
     args: {
         vereinId: v.id("verein"),
-        listKeys: v.array(v.string()),
+        targetKeys: v.array(v.string()),
     },
-    handler: async (ctx, { vereinId, listKeys }) => {
+    handler: async (ctx, { vereinId, targetKeys }) => {
         await requireAnyPermission(ctx, vereinId, [...LIST_READ_PERMISSIONS, ...MAIL_SEND_PERMISSIONS]);
 
-        const uniqueListKeys = Array.from(new Set(listKeys));
-        if (uniqueListKeys.length === 0) {
-            return {
-                listSummaries: [],
-                recipients: [],
-                recipientCount: 0,
-                blockedCount: 0,
-            };
-        }
-
-        const recipientsByEmail = new Map<string, MitgliedSummary>();
-        const blockedEmails = new Set<string>();
-        const listSummaries = [] as { key: string; name: string; recipientCount: number; blockedCount: number }[];
-
-        for (const listKey of uniqueListKeys) {
-            const { name, members } = await resolveMembersForListKey(ctx, vereinId, listKey);
-            const membersWithEmail = members.filter((mitglied) => trimAndNormalize(mitglied.kontakt.email).length > 0);
-            const sendableMembers = membersWithEmail.filter((mitglied) => allowsListenEmails(mitglied));
-            const blockedMembers = membersWithEmail.filter((mitglied) => !allowsListenEmails(mitglied));
-
-            listSummaries.push({
-                key: listKey,
-                name,
-                recipientCount: sendableMembers.length,
-                blockedCount: blockedMembers.length,
-            });
-
-            for (const member of blockedMembers) {
-                blockedEmails.add(member.kontakt.email.trim().toLowerCase());
-            }
-
-            for (const member of sendableMembers) {
-                const email = member.kontakt.email.trim().toLowerCase();
-                if (!recipientsByEmail.has(email)) {
-                    recipientsByEmail.set(email, toMitgliedSummary(member));
-                }
-            }
-        }
-
-        const recipients = Array.from(recipientsByEmail.values()).sort((left, right) => `${left.nachname} ${left.vorname}`.localeCompare(`${right.nachname} ${right.vorname}`, "de"));
+        const preview = await collectRecipientsForTargetKeys(ctx, vereinId, targetKeys);
 
         return {
-            listSummaries,
-            recipients,
-            recipientCount: recipients.length,
-            blockedCount: blockedEmails.size,
+            targetSummaries: preview.targetSummaries,
+            recipients: preview.recipients,
+            recipientCount: preview.recipientCount,
+            blockedCount: preview.blockedCount,
         };
     },
 });
@@ -478,7 +672,7 @@ export const previewRecipients = query({
 export const sendMail = mutation({
     args: {
         vereinId: v.id("verein"),
-        listKeys: v.array(v.string()),
+        targetKeys: v.array(v.string()),
         subject: v.string(),
         body: v.string(),
         attachments: v.array(
@@ -490,7 +684,7 @@ export const sendMail = mutation({
             }),
         ),
     },
-    handler: async (ctx, { vereinId, listKeys, subject, body, attachments }) => {
+    handler: async (ctx, { vereinId, targetKeys, subject, body, attachments }) => {
         const access = await requireAnyPermission(ctx, vereinId, MAIL_SEND_PERMISSIONS);
         const user = await ctx.auth.getUserIdentity();
 
@@ -504,30 +698,13 @@ export const sendMail = mutation({
             throw new Error("Bitte gib einen Nachrichtentext ein");
         }
 
-        const uniqueListKeys = Array.from(new Set(listKeys));
-        if (uniqueListKeys.length === 0) {
-            throw new Error("Bitte wähle mindestens eine Liste aus");
+        if (targetKeys.length === 0) {
+            throw new Error("Bitte wähle mindestens ein Empfängerziel aus");
         }
 
-        const recipients = new Map<string, string>();
-        const listNames: string[] = [];
+        const resolvedRecipients = await collectRecipientsForTargetKeys(ctx, vereinId, targetKeys);
 
-        for (const listKey of uniqueListKeys) {
-            const { name, members } = await resolveMembersForListKey(ctx, vereinId, listKey);
-            listNames.push(name);
-            for (const member of members) {
-                if (!allowsListenEmails(member)) {
-                    continue;
-                }
-
-                const email = member.kontakt.email.trim().toLowerCase();
-                if (email) {
-                    recipients.set(email, member.kontakt.email.trim());
-                }
-            }
-        }
-
-        const recipientEmails = Array.from(recipients.values());
+        const recipientEmails = resolvedRecipients.recipientEmails;
         if (recipientEmails.length === 0) {
             throw new Error("Keine empfangsbereiten Empfänger mit E-Mail-Adresse gefunden");
         }
@@ -543,8 +720,8 @@ export const sendMail = mutation({
             vereinId,
             subject: normalizedSubject,
             body: normalizedBody,
-            listKeys: uniqueListKeys,
-            listNames,
+            listKeys: resolvedRecipients.targetKeys,
+            listNames: resolvedRecipients.targetNames,
             recipientCount: recipientEmails.length,
             requestedByUserId: typeof user?.subject === "string" ? user.subject : undefined,
             requestedByEmail,
@@ -568,7 +745,7 @@ export const sendMail = mutation({
             replyTo: access.verein.contact.email,
             requestedByEmail,
             recipientEmails,
-            listNames,
+            listNames: resolvedRecipients.targetNames,
             attachments,
             mailHistoryId,
         });

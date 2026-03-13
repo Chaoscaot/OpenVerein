@@ -12,40 +12,51 @@ const siteUrl = process.env.SITE_URL!;
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
-    return betterAuth({
-        baseURL: siteUrl,
-        database: authComponent.adapter(ctx),
-        emailAndPassword: {
-            revokeSessionsOnPasswordReset: true,
-            enabled: true,
-            requireEmailVerification: true,
-            autoSignIn: true,
-            sendResetPassword: async ({ user, url }) => {
-                await requireActionCtx(ctx).scheduler.runAfter(0, internal.sendMails.sendResetEmail, {
-                    to: user.email,
-                    link: url,
-                });
-            },
-        },
+  return betterAuth({
+    baseURL: siteUrl,
+    database: authComponent.adapter(ctx),
+    emailAndPassword: {
+      revokeSessionsOnPasswordReset: true,
+      enabled: true,
+      requireEmailVerification: true,
+      autoSignIn: true,
+      sendResetPassword: async ({ user, url }) => {
+        await requireActionCtx(ctx).scheduler.runAfter(
+          0,
+          internal.sendMails.sendResetEmail,
+          {
+            to: user.email,
+            link: url,
+          },
+        );
+      },
+    },
 
-        emailVerification: {
-            autoSignInAfterVerification: true,
-            sendVerificationEmail: async ({ user, url }) => {
-                const verificationUrl = new URL(url);
-                verificationUrl.searchParams.set("callbackURL", `${siteUrl}/verify-email/confirmed`);
-                await requireActionCtx(ctx).scheduler.runAfter(0, internal.sendMails.sendVerifyEmail, {
-                    to: user.email,
-                    link: verificationUrl.toString(),
-                });
-            },
-        },
-        plugins: [convex({ authConfig })],
-    });
+    emailVerification: {
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        const verificationUrl = new URL(url);
+        verificationUrl.searchParams.set(
+          "callbackURL",
+          `${siteUrl}/verify-email/confirmed`,
+        );
+        await requireActionCtx(ctx).scheduler.runAfter(
+          0,
+          internal.sendMails.sendVerifyEmail,
+          {
+            to: user.email,
+            link: verificationUrl.toString(),
+          },
+        );
+      },
+    },
+    plugins: [convex({ authConfig })],
+  });
 };
 
 export const getCurrentUser = query({
-    args: {},
-    handler: async (ctx) => {
-        return authComponent.getAuthUser(ctx);
-    },
+  args: {},
+  handler: async (ctx) => {
+    return authComponent.getAuthUser(ctx);
+  },
 });

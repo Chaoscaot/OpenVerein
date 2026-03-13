@@ -6,24 +6,24 @@ import { useQuery } from "convex/react";
 const UPLOADED_IMAGE_PREFIX = "r2:";
 
 export function toStoredImageRef(fileId: string) {
-    return `${UPLOADED_IMAGE_PREFIX}${fileId}`;
+  return `${UPLOADED_IMAGE_PREFIX}${fileId}`;
 }
 
 export function getStoredImageFileId(image: string | null | undefined) {
-    if (!image?.startsWith(UPLOADED_IMAGE_PREFIX)) {
-        return null;
-    }
+  if (!image?.startsWith(UPLOADED_IMAGE_PREFIX)) {
+    return null;
+  }
 
-    return image.slice(UPLOADED_IMAGE_PREFIX.length) || null;
+  return image.slice(UPLOADED_IMAGE_PREFIX.length) || null;
 }
 
 export function useStoredImageUrl(image: string | null | undefined) {
-    const fileId = getStoredImageFileId(image);
-    const uploadedUrl = useQuery(api.files.getUrl, fileId ? { fileId } : "skip");
+  const fileId = getStoredImageFileId(image);
+  const uploadedUrl = useQuery(api.files.getUrl, fileId ? { fileId } : "skip");
 
-    if (fileId) {
-        return uploadedUrl ?? "";
-    }
+  if (fileId) {
+    return uploadedUrl ?? "";
+  }
 
-    return image ?? "";
+  return image ?? "";
 }
